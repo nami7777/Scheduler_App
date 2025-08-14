@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+
+
+
+    <title>Gemini Scheduler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "react-dom": "https://esm.sh/react-dom@^19.1.0",
+          "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+          "react/": "https://esm.sh/react@^19.1.0/",
+          "react": "https://esm.sh/react@^19.1.0",
+          "idb": "https://esm.sh/idb@^8.0.0",
+          "@google/genai": "https://esm.sh/@google/genai",
+          "marked": "https://esm.sh/marked@^12.0.2",
+          "dompurify": "https://esm.sh/dompurify@^3.1.0"
+        }
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+    <script>
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  /* Ensure the calendar icon in date inputs is always dark and visible */
+  input[type="date"],
+  input[type="datetime-local"] {
+    color-scheme: light;
+  }
+
+  /* Countdown animation */
+  .countdown-part {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem; /* Add small gap between number and label */
+  }
+  .digit-container {
+    position: relative;
+    width: 1ch; /* Use character width for monospaced fonts */
+    height: 1.5em; /* Adjust based on font size */
+    overflow: hidden;
+  }
+  .digit {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    transition: transform 0.4s ease-in-out, opacity 0.4s ease-in-out;
+  }
+  .digit-current {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  .digit-previous {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+
+  /* Calendar slide animations */
+  @keyframes slide-out-to-left {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(-50%); opacity: 0; }
+  }
+  @keyframes slide-in-from-right {
+    from { transform: translateX(50%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes slide-out-to-right {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(50%); opacity: 0; }
+  }
+  @keyframes slide-in-from-left {
+    from { transform: translateX(-50%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  .slide-out-to-left { animation: slide-out-to-left 0.3s ease-out forwards; }
+  .slide-in-from-right { animation: slide-in-from-right 0.3s ease-out forwards; }
+  .slide-out-to-right { animation: slide-out-to-right 0.3s ease-out forwards; }
+  .slide-in-from-left { animation: slide-in-from-left 0.3s ease-out forwards; }
+
+  /* Page transition animation */
+  @keyframes fade-in-up {
+      from {
+          opacity: 0;
+          transform: translateY(10px);
+      }
+      to {
+          opacity: 1;
+          transform: translateY(0);
+      }
+  }
+  .fade-in-up {
+      animation: fade-in-up 0.4s ease-out forwards;
+  }
+
+  /* Modal Pop-up animation */
+  @keyframes pop-up-in {
+      from {
+          opacity: 0;
+          transform: scale(0.95) translateY(10px);
+      }
+      to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+      }
+  }
+   @keyframes pop-up-out {
+      from {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+      }
+      to {
+          opacity: 0;
+          transform: scale(0.95) translateY(10px);
+      }
+  }
+
+  @keyframes backdrop-in {
+      from { background-color: rgba(17, 24, 39, 0); backdrop-filter: blur(0px); }
+      to { background-color: rgba(17, 24, 39, 0.6); backdrop-filter: blur(4px); }
+  }
+  @keyframes backdrop-out {
+      from { background-color: rgba(17, 24, 39, 0.6); backdrop-filter: blur(4px); }
+      to { background-color: rgba(17, 24, 39, 0); backdrop-filter: blur(0px); }
+  }
+
+  .modal-content-in { animation: pop-up-in 0.3s ease-out forwards; }
+  .modal-content-out { animation: pop-up-out 0.3s ease-out forwards; }
+  .modal-backdrop-in { animation: backdrop-in 0.3s ease-out forwards; }
+  .modal-backdrop-out { animation: backdrop-out 0.3s ease-out forwards; }
+
+
+  /* Birthday Widget Animation */
+  @keyframes rainbow-flow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+  }
+  .birthday-today-glow {
+      background: linear-gradient(124deg, #ff2400, #e81d1d, #e8b71d, #e3e81d, #1de840, #1ddde8, #2b1de8, #dd00f3, #dd00f3);
+      background-size: 1800% 1800%;
+      animation: rainbow-flow 18s ease infinite;
+  }
+
+  /* Subtask reorder animation */
+  @keyframes highlight-reorder {
+    from { background-color: #93c5fd; /* blue-300 */ }
+    to { background-color: rgb(240 249 255 / 0.7); /* bg-sky-50/70 */ }
+  }
+  .subtask-moved {
+    animation: highlight-reorder 0.6s ease-out;
+  }
+
+  .playground-pdf-viewer {
+      position: relative;
+      overflow: auto;
+      cursor: default;
+  }
+  .playground-pdf-viewer.annotation-active {
+    touch-action: none;
+  }
+  .playground-pdf-viewer.pan-mode {
+    cursor: grab;
+  }
+  .playground-pdf-viewer.pan-mode:active {
+    cursor: grabbing;
+  }
+  
+  .playground-pdf-viewer canvas {
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      margin: 0 auto;
+      display: block;
+  }
+  .playground-annotation-canvas {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      cursor: crosshair;
+  }
+  .text-annotation-input {
+      position: absolute;
+      border: 1px dashed #3b82f6;
+      background-color: rgba(255, 255, 255, 0.9);
+      padding: 4px;
+      font-family: sans-serif;
+      outline: none;
+      z-index: 30;
+  }
+
+  /* Styles for AI Assistant markdown rendering */
+  .prose strong {
+    font-weight: 600;
+    color: inherit;
+  }
+  .prose ul {
+    list-style-type: disc;
+    padding-left: 1.5rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .prose li {
+    margin-top: 0.25rem;
+  }
+  .prose p {
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .prose p:first-child {
+    margin-top: 0;
+  }
+  .prose p:last-child {
+    margin-bottom: 0;
+  }
+  .prose a {
+    color: #2563eb;
+    text-decoration: underline;
+    transition: color 0.2s;
+  }
+  .prose a:hover {
+    color: #1d4ed8;
+  }
+
+  /* AI Assistant Blinking Cursor */
+  .blinking-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.1em;
+    background-color: #3b82f6; /* blue-600 */
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+    margin-left: 2px;
+  }
+  @keyframes blink {
+    from, to { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+
+</style>
+</head>
+  <body class="bg-sky-50">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "Gemini Scheduler",
+  "description": "An intelligent scheduler application to manage assignments, exams, and tasks with dynamic workload distribution.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
