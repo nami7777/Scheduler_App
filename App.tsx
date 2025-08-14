@@ -1,7 +1,5 @@
-
-
-import React, { useState, useEffect } from 'react';
-import { Worklet, View, Assignment, WorkletType, Event, Routine, Exam, SpeedSession, AppSettings, DisplaySettings, NotificationSettings, Habit, Birthday, DailyTask, DailyWorkload, Material, PrefillWorklet } from './types.ts';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Worklet, View, Assignment, WorkletType, Event, Routine, Exam, SpeedSession, AppSettings, DisplaySettings, NotificationSettings, Habit, Birthday, DailyTask, DailyWorkload, Material, PrefillWorklet, MaterialType } from './types.ts';
 import Dashboard from './components/Dashboard.tsx';
 import CalendarView from './components/CalendarView.tsx';
 import AddWorkletView, { AddEventForm, AddBirthdayForm } from './components/AddWorkletView.tsx';
@@ -15,6 +13,7 @@ import HabitsView from './components/HabitsView.tsx';
 import ReschedulesView from './components/ReschedulesView.tsx';
 import MaterialsView from './components/MaterialsView.tsx';
 import PlaygroundView from './components/PlaygroundView.tsx';
+import NotebookPlaygroundView from './components/NotebookPlaygroundView.tsx';
 import AiAssistantView from './components/AiAssistantView.tsx';
 import WorkletDetailModal from './components/WorkletDetailModal.tsx';
 import RadialMenu from './components/RadialMenu.tsx';
@@ -674,8 +673,42 @@ const App: React.FC = () => {
     switch (view) {
       case View.AiAssistant:
         return <AiAssistantView worklets={worklets} displaySettings={appSettings.display} onNavigateWithPrefill={handleNavigateWithPrefill} />;
-      case View.Playground:
-        return playgroundArgs ? <PlaygroundView {...playgroundArgs} worklets={worklets} materials={materials} onBack={() => handleNavigate(playgroundArgs.returnTo || View.Dashboard)} onSaveWorklet={handleSaveWorklet} onSaveMaterial={handleSaveMaterial} /> : <div className="p-4">Error: No task selected for study.</div>;
+      case View.Playground: {
+        if (!playgroundArgs) {
+          return <div className="p-4">Error: Playground arguments missing.</div>;
+        }
+
+        let materialToDisplay: Material | undefined;
+        if (playgroundArgs.materialId) {
+            materialToDisplay = materials.find(m => m.id === playgroundArgs.materialId);
+        } else if (playgroundArgs.workletId && playgroundArgs.dateKey) {
+            const worklet = worklets.find(w => w.id === playgroundArgs.workletId) as Assignment | Exam | undefined;
+            const task = worklet?.dailyTasks?.find(t => t.date === playgroundArgs.dateKey);
+            const materialId = task?.workSegments?.[0]?.materialId;
+            if(materialId) {
+                materialToDisplay = materials.find(m => m.id === materialId);
+            }
+        }
+
+        if (!materialToDisplay) {
+            return <div className="p-4">Error: Could not find the material to display in the Playground.</div>
+        }
+        
+        const commonProps = {
+            ...playgroundArgs,
+            worklets,
+            materials,
+            onBack: () => handleNavigate(playgroundArgs.returnTo || View.Dashboard),
+            onSaveWorklet: handleSaveWorklet,
+            onSaveMaterial: handleSaveMaterial,
+        };
+
+        if (materialToDisplay.type === MaterialType.NOTEBOOK) {
+            return <NotebookPlaygroundView {...commonProps} />;
+        } else {
+            return <PlaygroundView {...commonProps} />;
+        }
+      }
       case View.Materials:
         return <MaterialsView materials={materials} worklets={worklets} onSaveMaterial={handleSaveMaterial} onDeleteMaterial={dbDeleteMaterial} onNavigateToPlayground={handleNavigateToPlayground} />;
       case View.Habits:

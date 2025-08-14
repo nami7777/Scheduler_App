@@ -87,7 +87,7 @@ const NotebookSettingsModal: React.FC<{
                 <div className="space-y-4">
                     <div>
                         <label htmlFor="notebook-name" className="block text-sm font-medium text-slate-700 mb-1">Notebook Name</label>
-                        <input id="notebook-name" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Physics Notes" className="w-full p-2 bg-sky-50/80 border border-slate-300 rounded-md"/>
+                        <input id="notebook-name" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Physics Notes" className="w-full p-2 bg-sky-50/80 border border-slate-300 rounded-md text-slate-900 placeholder:text-slate-400"/>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-2">Orientation</label>

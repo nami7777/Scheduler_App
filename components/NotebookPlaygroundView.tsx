@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { Worklet, Material, DailyTask, Assignment, Exam, MaterialType, AllAnnotations, Annotation, PathAnnotation, TextAnnotation, PageAnnotations, ImageAnnotation, View } from '../types.ts';
-import { ChevronLeftIcon, PlusIcon, PencilIcon, StarIcon, HandRaisedIcon, MinusIcon, ChatBubbleLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, EyeIcon, EyeSlashIcon, PaintBrushIcon, ListBulletIcon, LassoIcon } from './icons.tsx';
-import { getYoutubeVideoId } from '../utils.ts';
+import { ChevronLeftIcon, PlusIcon, PencilIcon, StarIcon, HandRaisedIcon, MinusIcon, ChatBubbleLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, EyeIcon, EyeSlashIcon, PhotoIcon, PaintBrushIcon, Squares2X2Icon, ListBulletIcon, LassoIcon } from './icons.tsx';
 
 interface PlaygroundViewProps {
     workletId?: string;
@@ -16,6 +15,7 @@ interface PlaygroundViewProps {
 }
 
 type Tool = 'pan' | 'pen' | 'highlighter' | 'line' | 'text' | 'eraser' | 'lasso-eraser' | 'read';
+type NotebookBackground = 'blank' | 'grid' | 'lines';
 type InteractionMode = 'moving' | 'resizing-br' | 'resizing-bl' | 'resizing-tr' | 'resizing-tl' | null;
 
 const useClickOutside = (ref: React.RefObject<HTMLElement>, callback: () => void) => {
@@ -30,7 +30,7 @@ const useClickOutside = (ref: React.RefObject<HTMLElement>, callback: () => void
     }, [ref, callback]);
 };
 
-// --- ANNOTATION TOOLBAR (FOR FILES) ---
+// --- ANNOTATION TOOLBAR (FOR NOTEBOOKS) ---
 const AnnotationToolbar: React.FC<{
     tool: Tool;
     setTool: (tool: Tool) => void;
@@ -44,17 +44,20 @@ const AnnotationToolbar: React.FC<{
     redoStackSize: number;
     onTogglePageHighlighted: () => void;
     isPageHighlighted: boolean;
+    onSetBackground: (bg: NotebookBackground) => void;
+    onAddImage: () => void;
     currentPage: number;
     numPages: number;
     setCurrentPage: (page: number) => void;
     zoom: number;
     setZoom: (zoom: number) => void;
 }> = (props) => {
-    const { tool, setTool, color, setColor, lineWidth, setLineWidth, handleUndo, handleRedo, undoStackSize, redoStackSize, onTogglePageHighlighted, isPageHighlighted, currentPage, numPages, setCurrentPage, zoom, setZoom } = props;
+    const { tool, setTool, color, setColor, lineWidth, setLineWidth, handleUndo, handleRedo, undoStackSize, redoStackSize, onTogglePageHighlighted, isPageHighlighted, onSetBackground, onAddImage, currentPage, numPages, setCurrentPage, zoom, setZoom } = props;
     
-    const [isColorPopoverOpen, setIsColorPopoverOpen] = useState(false);
+    const [activePopover, setActivePopover] = useState<'tools' | 'background' | null>(null);
     const popoverRef = useRef<HTMLDivElement>(null);
-    useClickOutside(popoverRef, () => isColorPopoverOpen && setIsColorPopoverOpen(false));
+
+    useClickOutside(popoverRef, () => activePopover && setActivePopover(null));
 
     const tools = [
         { name: 'read' as Tool, icon: <EyeIcon className="w-5 h-5"/>, title: 'Read Mode (Pan/Zoom Only)' },
@@ -78,8 +81,8 @@ const AnnotationToolbar: React.FC<{
             <div className="h-6 w-px bg-slate-600/70 mx-1"></div>
             
             <div className="relative" ref={popoverRef}>
-                <button onClick={() => setIsColorPopoverOpen(p => !p)} style={{backgroundColor: color}} className={`w-6 h-6 rounded-md border-2 ${tool === 'highlighter' ? 'border-yellow-400' : 'border-white/50'}`} />
-                 {isColorPopoverOpen && (
+                <button onClick={() => setActivePopover(p => p === 'tools' ? null : 'tools')} style={{backgroundColor: color}} className={`w-6 h-6 rounded-md border-2 ${tool === 'highlighter' ? 'border-yellow-400' : 'border-white/50'}`} />
+                 {activePopover === 'tools' && (
                     <div className="absolute bottom-full mb-2 p-3 bg-slate-800 rounded-lg shadow-xl border border-white/10 space-y-3 w-48">
                         <label className="text-xs font-bold text-slate-400">Color</label>
                         <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-full h-8 border-none bg-transparent cursor-pointer" />
@@ -88,6 +91,23 @@ const AnnotationToolbar: React.FC<{
                             <input type="range" min="2" max="32" value={lineWidth} onChange={e => setLineWidth(Number(e.target.value))} className="w-full h-1 bg-slate-500/50 rounded-lg appearance-none cursor-pointer"/>
                             <span className="text-xs text-slate-300 font-mono w-4">{lineWidth}</span>
                         </div>
+                    </div>
+                )}
+            </div>
+            
+            <button onClick={onAddImage} className="p-2 rounded-lg text-slate-300 hover:bg-slate-700/80" title="Add Image">
+                <PhotoIcon className="w-5 h-5" />
+            </button>
+
+             <div className="relative">
+                <button onClick={() => setActivePopover(p => p === 'background' ? null : 'background')} className="p-2 rounded-lg text-slate-300 hover:bg-slate-700/80" title="Change Background">
+                    <Squares2X2Icon className="w-5 h-5" />
+                </button>
+                 {activePopover === 'background' && (
+                    <div ref={popoverRef} className="absolute bottom-full mb-2 p-2 bg-slate-800 rounded-lg shadow-xl border border-white/10 space-y-1">
+                       {(['blank', 'lines', 'grid'] as NotebookBackground[]).map(bg => (
+                           <button key={bg} onClick={() => {onSetBackground(bg); setActivePopover(null);}} className="w-full text-left px-3 py-1.5 text-sm text-slate-200 hover:bg-blue-600 rounded-md capitalize">{bg}</button>
+                       ))}
                     </div>
                 )}
             </div>
@@ -183,9 +203,9 @@ const PageNavigator: React.FC<{
     currentPage: number;
     setCurrentPage: (page: number) => void;
     material: Material;
-    pdfDoc: any;
     highlightedPages: number[];
-}> = ({ numPages, currentPage, setCurrentPage, material, pdfDoc, highlightedPages }) => {
+    onAddPage?: () => void;
+}> = ({ numPages, currentPage, setCurrentPage, material, highlightedPages, onAddPage }) => {
     
     const previewCanvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
     const intersectionObserver = useRef<IntersectionObserver | null>(null);
@@ -193,18 +213,19 @@ const PageNavigator: React.FC<{
     
     const renderPreview = useCallback(async (pageNum: number) => {
         const canvas = previewCanvasRefs.current[pageNum - 1];
-        if (!canvas || !pdfDoc) return;
+        if (!canvas) return;
         
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         
         const previewScale = 0.15;
         
-        const page = await pdfDoc.getPage(pageNum);
-        const viewport = page.getViewport({ scale: previewScale });
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await page.render({ canvasContext: ctx, viewport }).promise;
+        const isLandscape = material.orientation === 'landscape';
+        const dims = { width: isLandscape ? 1550 : 1200, height: isLandscape ? 1200 : 1550 };
+        canvas.width = dims.width * previewScale;
+        canvas.height = dims.height * previewScale;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         const pageAnnotations = material.annotations?.[pageNum] || [];
         ctx.save();
@@ -214,7 +235,7 @@ const PageNavigator: React.FC<{
         }
         ctx.restore();
 
-    }, [pdfDoc, material]);
+    }, [material]);
 
     useEffect(() => {
         if (intersectionObserver.current) intersectionObserver.current.disconnect();
@@ -265,27 +286,34 @@ const PageNavigator: React.FC<{
                     </button>
                 )
             })}
+             {onAddPage && (
+                <button
+                    onClick={onAddPage}
+                    className="w-full p-2 rounded-lg transition-colors border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center justify-center h-24"
+                    title="Add New Page"
+                >
+                    <PlusIcon className="w-6 h-6 text-slate-400" />
+                    <span className="mt-1 text-xs font-medium text-slate-500">New Page</span>
+                </button>
+            )}
         </div>
     );
 };
 
-// Internal Material Viewer Component for Files
-const MaterialViewer: React.FC<{
+// Internal Notebook Viewer Component
+const NotebookViewer: React.FC<{
     material: Material;
     initialPage: number;
     onSaveMaterial: (material: Material) => void;
-    worklet?: Assignment | Exam | null;
-}> = ({ material, initialPage, onSaveMaterial, worklet }) => {
+}> = ({ material, initialPage, onSaveMaterial }) => {
     const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
     const annotationCanvasRef = useRef<HTMLCanvasElement>(null);
     const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
     const viewerContainerRef = useRef<HTMLDivElement>(null);
+    const imageUploadInputRef = useRef<HTMLInputElement>(null);
     const textAnnotationInputRef = useRef<HTMLTextAreaElement | null>(null);
 
-    const [pdfDoc, setPdfDoc] = useState<any>(null);
-    const [numPages, setNumPages] = useState(0);
-    const [currentPage, setCurrentPageInternal] = useState(material.lastViewedPage || initialPage);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const [isAnnotationMode, setIsAnnotationMode] = useState(true);
     const [isNavigatorVisible, setIsNavigatorVisible] = useState(true);
     
@@ -293,15 +321,17 @@ const MaterialViewer: React.FC<{
     const [color, setColor] = useState('#EF4444');
     const [lineWidth, setLineWidth] = useState(4);
     const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
-    
-    const [zoom, setZoom] = useState(1);
-    const [offset, setOffset] = useState({ x: 0, y: 0 });
+
+    const [numPages, setNumPages] = useState(material.pageCount || 1);
+    const [currentPage, setCurrentPageInternal] = useState(material.lastViewedPage || initialPage);
+    const [zoom, setZoom] = useState(material.zoom || 1);
+    const [offset, setOffset] = useState(material.offset || { x: 0, y: 0 });
     const [annotations, setAnnotations] = useState<AllAnnotations>(material.annotations || {});
     const [highlightedPages, setHighlightedPages] = useState(material.highlightedPages || []);
+    const [pageBackgrounds, setPageBackgrounds] = useState<{[pageNum: number]: NotebookBackground}>(material.pageBackgrounds || { 1: 'blank' });
     
     const undoStack = useRef<{ pageNum: number, annotations: PageAnnotations }[]>([]);
     const redoStack = useRef<{ pageNum: number, annotations: PageAnnotations }[]>([]);
-    const pageRenderCache = useRef<Map<number, { canvas: HTMLCanvasElement, width: number, height: number }>>(new Map());
     const panState = useRef<{ isPanning: boolean, startX: number, startY: number, initialOffset: { x: number, y: number } }>({ isPanning: false, startX: 0, startY: 0, initialOffset: { x: 0, y: 0 } });
     const pinchState = React.useRef<{isPinching: boolean, initialDist: number, initialZoom: number}>({isPinching: false, initialDist: 0, initialZoom: 1});
 
@@ -320,25 +350,14 @@ const MaterialViewer: React.FC<{
             document.body.style.overflow = 'auto';
         };
     }, []);
-
+    
     useEffect(() => {
-        if (material.type === MaterialType.PDF && material.blob) {
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const typedarray = new Uint8Array(e.target!.result as ArrayBuffer);
-                    const pdf = await (window as any).pdfjsLib.getDocument({ data: typedarray }).promise;
-                    setPdfDoc(pdf); setNumPages(pdf.numPages);
-                    if (material.zoom) setZoom(material.zoom);
-                    if (material.offset) setOffset(material.offset);
-                } catch(err) { console.error("Error loading PDF", err); } 
-                finally { setIsLoading(false); }
-            };
-            reader.readAsArrayBuffer(material.blob);
-        } else {
-            setIsLoading(false);
-        }
-    }, [material]);
+        const debounceTimeout = setTimeout(() => {
+            onSaveMaterial({ ...material, annotations, highlightedPages, pageBackgrounds, lastViewedPage: currentPage, pageCount: numPages, zoom, offset });
+        }, 1000);
+        return () => clearTimeout(debounceTimeout);
+    }, [annotations, highlightedPages, pageBackgrounds, currentPage, numPages, zoom, offset, material, onSaveMaterial]);
+
 
     const setCurrentPage = (page: number) => {
         if (page > 0 && page <= numPages) {
@@ -365,46 +384,44 @@ const MaterialViewer: React.FC<{
         undoStack.current.push({ pageNum: lastUndo.pageNum, annotations: annotations[lastUndo.pageNum] || [] });
         setAnnotations(prev => ({ ...prev, [lastUndo.pageNum]: lastUndo.annotations }));
     }, [annotations]);
-    
+
     useLayoutEffect(() => {
-        let isCancelled = false;
+        if (isLoading || !viewerContainerRef.current) return;
+
+        const drawAll = async () => {
+            const isLandscape = material.orientation === 'landscape';
+            const pageScale = 1.5;
+            const dims = { width: (isLandscape ? 1550 : 1200) * pageScale, height: (isLandscape ? 1200 : 1550) * pageScale };
         
-        const renderStaticLayers = async () => {
-            if (isLoading || !pdfDoc || !viewerContainerRef.current) return;
-
-            let pageData = pageRenderCache.current.get(currentPage);
-            if (!pageData) {
-                const page = await pdfDoc.getPage(currentPage);
-                const pageScale = 1.5;
-                const viewport = page.getViewport({ scale: pageScale });
-                const offscreenCanvas = document.createElement('canvas');
-                offscreenCanvas.width = viewport.width;
-                offscreenCanvas.height = viewport.height;
-                const offscreenCtx = offscreenCanvas.getContext('2d')!;
-                await page.render({ canvasContext: offscreenCtx, viewport }).promise;
-                pageData = { canvas: offscreenCanvas, width: viewport.width, height: viewport.height };
-                pageRenderCache.current.set(currentPage, pageData);
-            }
-            if (isCancelled) return;
-
-            const container = viewerContainerRef.current;
-            [backgroundCanvasRef, annotationCanvasRef].forEach(ref => {
+            const container = viewerContainerRef.current!;
+            [backgroundCanvasRef, annotationCanvasRef, interactionCanvasRef].forEach(ref => {
                 if (ref.current) {
                     ref.current.width = container.clientWidth;
                     ref.current.height = container.clientHeight;
                 }
             });
-
+        
             const bgCtx = backgroundCanvasRef.current?.getContext('2d');
             if (bgCtx) {
                 bgCtx.save();
                 bgCtx.clearRect(0, 0, bgCtx.canvas.width, bgCtx.canvas.height);
                 bgCtx.translate(offset.x, offset.y);
                 bgCtx.scale(zoom, zoom);
-                bgCtx.drawImage(pageData!.canvas, 0, 0);
+                
+                bgCtx.fillStyle = 'white';
+                bgCtx.fillRect(0, 0, dims.width, dims.height);
+                const bgType = pageBackgrounds[currentPage] || 'blank';
+                if (bgType !== 'blank') {
+                    bgCtx.strokeStyle = '#e2e8f0'; bgCtx.lineWidth = 1;
+                    if (bgType === 'lines') for (let y = 30 * pageScale; y < dims.height; y += 30 * pageScale) { bgCtx.beginPath(); bgCtx.moveTo(0, y); bgCtx.lineTo(dims.width, y); bgCtx.stroke(); }
+                    if (bgType === 'grid') {
+                        for (let x = 0; x < dims.width; x += 20 * pageScale) { bgCtx.beginPath(); bgCtx.moveTo(x, 0); bgCtx.lineTo(x, dims.height); bgCtx.stroke(); }
+                        for (let y = 0; y < dims.height; y += 20 * pageScale) { bgCtx.beginPath(); bgCtx.moveTo(0, y); bgCtx.lineTo(dims.width, y); bgCtx.stroke(); }
+                    }
+                }
                 bgCtx.restore();
             }
-    
+        
             const annoCtx = annotationCanvasRef.current?.getContext('2d');
             if (annoCtx) {
                 annoCtx.save();
@@ -418,25 +435,29 @@ const MaterialViewer: React.FC<{
                 annoCtx.restore();
             }
         };
-        
-        renderStaticLayers();
 
-        const interactionCanvas = interactionCanvasRef.current;
-        if(interactionCanvas && viewerContainerRef.current) {
-            interactionCanvas.width = viewerContainerRef.current.clientWidth;
-            interactionCanvas.height = viewerContainerRef.current.clientHeight;
-        }
+        drawAll();
+    
+    }, [isLoading, currentPage, annotations, selectedAnnotationId, material.orientation, pageBackgrounds, offset, zoom]);
+    
+    const handleAddImage = useCallback((imageData: string) => {
+        const img = new Image();
+        img.onload = () => {
+            pushToUndoStack(currentPage);
+            const newImage: ImageAnnotation = { id: crypto.randomUUID(), type: 'image', imageData, x: 50, y: 50, width: img.width > 400 ? 400 : img.width, height: img.width > 400 ? img.height * (400 / img.width) : img.height };
+            setAnnotations(prev => ({...prev, [currentPage]: [...(prev[currentPage] || []), newImage]}));
+        };
+        img.src = imageData;
+    }, [currentPage]);
 
-        return () => { isCancelled = true; };
-    }, [isLoading, pdfDoc, currentPage, annotations, selectedAnnotationId, offset, zoom]);
-    
-     useEffect(() => {
-        const debounceTimeout = setTimeout(() => {
-            onSaveMaterial({ ...material, annotations, highlightedPages, lastViewedPage: currentPage, zoom, offset });
-        }, 1000);
-        return () => clearTimeout(debounceTimeout);
-    }, [annotations, highlightedPages, currentPage, zoom, offset, material, onSaveMaterial]);
-    
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => handleAddImage(event.target?.result as string);
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    };
+
     useEffect(() => {
         const handleKeys = (e: KeyboardEvent) => {
             if (e.ctrlKey || e.metaKey) {
@@ -585,7 +606,7 @@ const MaterialViewer: React.FC<{
             activeAnnotation = { ...originalAnnotation, width: newWidth < 20 ? 20 : newWidth, height: newHeight < 20 ? 20 : newHeight, x: newX, y: newY };
         }
         interactionState.current.annotation = activeAnnotation;
-
+        
         interactionCtx.save();
         interactionCtx.clearRect(0, 0, interactionCtx.canvas.width, interactionCtx.canvas.height);
         interactionCtx.translate(offset.x, offset.y);
@@ -722,6 +743,21 @@ const MaterialViewer: React.FC<{
         }
     };
 
+    const handleAddPage = () => {
+        pushToUndoStack(currentPage);
+        const newPageCount = numPages + 1;
+        const newBackgrounds = { ...pageBackgrounds, [newPageCount]: pageBackgrounds[currentPage] || 'blank' };
+        setNumPages(newPageCount);
+        setPageBackgrounds(newBackgrounds);
+        setAnnotations(prev => ({...prev, [newPageCount]: []}));
+        setCurrentPage(newPageCount);
+    }
+    
+    const handleSetBackground = (bg: NotebookBackground) => {
+        const newBackgrounds = { ...pageBackgrounds, [currentPage]: bg };
+        setPageBackgrounds(newBackgrounds);
+    };
+
     const handleTogglePageHighlighted = () => {
         const newHighlighted = new Set(highlightedPages);
         if (newHighlighted.has(currentPage)) newHighlighted.delete(currentPage); else newHighlighted.add(currentPage);
@@ -729,16 +765,18 @@ const MaterialViewer: React.FC<{
     };
 
     if (isLoading) return <div className="text-center p-8">Loading material...</div>;
-    if (!pdfDoc && material.type === MaterialType.PDF) return <div className="text-center p-8 text-red-500">Could not load material.</div>;
     
-    const viewerClass = `w-full h-full overflow-hidden relative ${ (tool === 'pan' || tool === 'read') ? 'cursor-grab' : 'cursor-crosshair' }`;
+    const viewerClass = `w-full h-full overflow-hidden relative ${
+        (tool === 'pan' || tool === 'read') ? 'cursor-grab' : 'cursor-crosshair'
+    }`;
     
     return (
         <div className="w-full h-full flex">
             {isNavigatorVisible && (
-                <PageNavigator numPages={numPages} currentPage={currentPage} setCurrentPage={setCurrentPage} material={material} pdfDoc={pdfDoc} highlightedPages={highlightedPages} />
+                <PageNavigator numPages={numPages} currentPage={currentPage} setCurrentPage={setCurrentPage} material={material} highlightedPages={highlightedPages} onAddPage={handleAddPage} />
             )}
             <div className="flex-grow flex flex-col relative bg-slate-200 min-w-0 min-h-0">
+                <input type="file" ref={imageUploadInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
                  <div className="absolute top-2 left-2 z-30">
                     <button onClick={() => setIsNavigatorVisible(!isNavigatorVisible)} className="p-2 rounded-full bg-slate-900/60 text-white backdrop-blur-sm hover:bg-slate-700/80 transition-colors">
                         <ListBulletIcon className="w-5 h-5"/>
@@ -749,12 +787,13 @@ const MaterialViewer: React.FC<{
                         tool={tool} setTool={setTool} color={color} setColor={setColor} lineWidth={lineWidth} setLineWidth={setLineWidth}
                         handleUndo={handleUndo} handleRedo={handleRedo} undoStackSize={undoStack.current.length} redoStackSize={redoStack.current.length}
                         onTogglePageHighlighted={handleTogglePageHighlighted} isPageHighlighted={highlightedPages.includes(currentPage)}
+                        onSetBackground={handleSetBackground} onAddImage={() => imageUploadInputRef.current?.click()}
                         currentPage={currentPage} numPages={numPages} setCurrentPage={setCurrentPage}
                         zoom={zoom} setZoom={setZoom}
                     />
                 </div>
                  <div className="fixed bottom-4 left-4 z-40 flex flex-col gap-2">
-                    <button onClick={() => setIsAnnotationMode(!isAnnotationMode)} title={isAnnotationMode ? 'Hide Toolbar' : 'Show Toolbar'} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-full shadow-2xl border border-white/10 text-white flex items-center justify-center transition hover:bg-slate-700">
+                    <button onClick={() => setIsAnnotationMode(!isAnnotationMode)} title={isAnnotationMode ? 'Hide Toolbar (Reading Mode)' : 'Show Toolbar (Annotation Mode)'} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-full shadow-2xl border border-white/10 text-white flex items-center justify-center transition hover:bg-slate-700">
                         {isAnnotationMode ? <EyeSlashIcon className="w-6 h-6"/> : <PencilIcon className="w-6 h-6"/>}
                     </button>
                 </div>
@@ -780,47 +819,14 @@ const MaterialViewer: React.FC<{
     );
 };
 
-const MediaPlayer: React.FC<{ material: Material, start: number, end: number }> = ({ material, start, end }) => {
-    const mediaRef = useRef<(HTMLVideoElement & HTMLAudioElement) | null>(null);
-    const objectUrl = useMemo(() => material.blob ? URL.createObjectURL(material.blob) : null, [material.blob]);
-    useEffect(() => () => { if (objectUrl) URL.revokeObjectURL(objectUrl); }, [objectUrl]);
-
-    useEffect(() => {
-        const mediaElement = mediaRef.current;
-        if (mediaElement && start > 0) {
-            const setStartTime = () => { if(mediaElement) mediaElement.currentTime = start; };
-            mediaElement.addEventListener('loadedmetadata', setStartTime);
-            return () => { if(mediaElement) mediaElement.removeEventListener('loadedmetadata', setStartTime); };
-        }
-    }, [start]);
-
-    if (!objectUrl) return <div className="p-8 text-center text-white">Loading media...</div>;
-    const MediaElement = material.type === MaterialType.VIDEO ? 'video' : 'audio';
-    return (
-        <div className="w-full h-full flex items-center justify-center bg-black p-4">
-            <MediaElement ref={mediaRef} src={objectUrl} controls className="max-w-full max-h-full rounded-lg" />
-        </div>
-    );
-};
-
-const YouTubePlayer: React.FC<{ material: Material }> = ({ material }) => {
-     const videoId = useMemo(() => material.url ? getYoutubeVideoId(material.url) : null, [material.url]);
-    if (!videoId) return <div className="p-8 text-center text-red-500">Invalid YouTube URL.</div>;
-    return (
-        <div className="w-full h-full flex items-center justify-center bg-black">
-            <iframe className="aspect-video w-full max-w-4xl" src={`https://www.youtube.com/embed/${videoId}`} title="YouTube video player" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen></iframe>
-        </div>
-    );
-};
-
-// --- Main Playground Component ---
-const PlaygroundView: React.FC<PlaygroundViewProps> = (props) => {
+// --- Main Notebook Playground Component ---
+const NotebookPlaygroundView: React.FC<PlaygroundViewProps> = (props) => {
     const { workletId, dateKey, materialId, worklets, materials, onBack, onSaveWorklet, onSaveMaterial } = props;
-    
+
     const { worklet, dailyTask, viewMode, title, materialForView } = useMemo(() => {
         if (materialId) {
             const mat = materials.find(m => m.id === materialId);
-            return { worklet: null, dailyTask: null, viewMode: 'material', title: mat?.name || 'Material Viewer', materialForView: mat };
+            return { worklet: null, dailyTask: null, viewMode: 'material', title: mat?.name || 'Notebook Viewer', materialForView: mat };
         }
         const w = worklets.find(wk => wk.id === workletId) as Assignment | Exam | undefined;
         if (!w || !dateKey) return { worklet: null, dailyTask: null, viewMode: 'none', title: '', materialForView: null };
@@ -830,25 +836,15 @@ const PlaygroundView: React.FC<PlaygroundViewProps> = (props) => {
 
     if (viewMode === 'none') return <div className="p-4">Loading task... or task not found. <button onClick={onBack}>Go Back</button></div>;
 
-    const activeSegment = viewMode === 'study' ? dailyTask?.workSegments[0] : null;
-    const activeMaterial = viewMode === 'study' ? materials.find(m => m.id === activeSegment?.materialId) : materialForView;
-    const initialPage = activeMaterial?.lastViewedPage || (activeSegment ? Math.floor(activeSegment.start) + 1 : 1);
+    const activeMaterial = (viewMode === 'study'
+        ? materials.find(m => m.id === dailyTask?.workSegments[0]?.materialId)
+        : materialForView) as Material | undefined;
 
-    const renderViewer = () => {
-        if (!activeMaterial) return <div className="text-center p-8">No material found for this task.</div>;
-        switch (activeMaterial.type) {
-            case MaterialType.PDF:
-            case MaterialType.EPUB:
-                 return <MaterialViewer key={activeMaterial.id} material={activeMaterial} initialPage={initialPage} onSaveMaterial={onSaveMaterial} worklet={worklet} />;
-            case MaterialType.VIDEO:
-            case MaterialType.AUDIO:
-                return <MediaPlayer material={activeMaterial} start={activeSegment?.start || 0} end={activeSegment?.end || 0} />;
-            case MaterialType.YOUTUBE:
-                return <YouTubePlayer material={activeMaterial} />;
-            default:
-                return <div className="text-center p-8">Viewer for this material type is not available.</div>;
-        }
-    };
+    const initialPage = activeMaterial?.lastViewedPage || 1;
+
+    if (!activeMaterial || activeMaterial.type !== MaterialType.NOTEBOOK) {
+        return <div className="p-8 text-center">Error: A valid notebook material could not be found.</div>;
+    }
 
     return (
         <div className="h-[calc(100vh-60px)] flex flex-col bg-slate-100">
@@ -862,10 +858,15 @@ const PlaygroundView: React.FC<PlaygroundViewProps> = (props) => {
                 </div>
             </header>
             <div className="flex-grow relative min-h-0 z-10">
-                {renderViewer()}
+                <NotebookViewer 
+                    key={activeMaterial.id} 
+                    material={activeMaterial} 
+                    initialPage={initialPage} 
+                    onSaveMaterial={onSaveMaterial} 
+                />
             </div>
         </div>
     );
 };
 
-export default PlaygroundView;
+export default NotebookPlaygroundView;
