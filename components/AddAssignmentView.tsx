@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Assignment, Subtask, DailyWorkload, WorkletType, DailyTask, Exam, Material, MaterialType, PrefillWorklet } from '../types.ts';
 import { TrashIcon, XMarkIcon } from './icons.tsx';
@@ -410,7 +411,7 @@ const handleSubtaskProgressChange = (id: string, value: string) => {
   const addSubtaskText = workletType === WorkletType.Assignment ? '+ Add Subtask' : '+ Add Topic';
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto pb-24">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
        <div className="py-4 mb-6">
           <h1 className="text-2xl sm:text-3xl font-extrabold bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent text-center truncate">{title || (isEditing ? `Edit ${workletType}` : `New ${workletType}`)}</h1>
       </div>
@@ -623,6 +624,9 @@ const handleSubtaskProgressChange = (id: string, value: string) => {
             </div>
         </div>
       </form>
+
+      {/* Spacer to prevent overlap with fixed action bar */}
+      <div className="h-24" />
       
       {/* Action Bar */}
       <div className="fixed bottom-6 left-0 right-0 z-40">

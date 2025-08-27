@@ -1,11 +1,5 @@
 
 
-
-
-
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Worklet, WorkletType, Event, Birthday, PrefillWorklet } from '../types.ts';
 import { calculateNextBirthday } from '../utils.ts';
@@ -47,7 +41,7 @@ export const AddEventForm: React.FC<{
     const inputClasses = "w-full p-2 bg-sky-50/80 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-slate-900 placeholder:text-slate-400";
 
     return (
-         <div className="p-4 sm:p-6 max-w-lg mx-auto pb-24">
+         <div className="p-4 sm:p-6 max-w-lg mx-auto">
              <div className="py-4 mb-6">
                 <h1 className="text-2xl sm:text-3xl font-extrabold bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent text-center truncate">{name || 'New Event'}</h1>
             </div>
@@ -73,6 +67,9 @@ export const AddEventForm: React.FC<{
                     </div>
                  </div>
             </form>
+
+            {/* Spacer to prevent overlap with fixed action bar */}
+            <div className="h-24" />
 
             {/* Action Bar */}
             <div className="fixed bottom-6 left-0 right-0 z-40">
@@ -136,7 +133,7 @@ export const AddBirthdayForm: React.FC<{
     const inputClasses = "w-full p-2 bg-sky-50/80 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-slate-900 placeholder:text-slate-400";
     
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto pb-24">
+        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
             <div className="py-4 mb-6">
               <h1 className="text-2xl sm:text-3xl font-extrabold bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent text-center truncate">{name || (isEditing ? 'Edit Birthday' : 'New Birthday')}</h1>
             </div>
@@ -199,6 +196,9 @@ export const AddBirthdayForm: React.FC<{
                     </div>
                  </div>
              </form>
+
+             {/* Spacer to prevent overlap with fixed action bar */}
+             <div className="h-24" />
 
              <div className="fixed bottom-6 left-0 right-0 z-40">
                 <div className="max-w-2xl mx-auto flex justify-center items-center gap-3 py-2 px-4 sm:px-6">

@@ -36,36 +36,31 @@ export const generateSubtaskPlan = (
   subtasks: Subtask[],
   materials: Material[],
   unit: string,
-  totalWorkForPlan?: number, // Optional override
-  startCumulative = 0
+  totalWorkForPlan?: number, // Optional override for redistribution
+  startCumulative = 0 // Optional override for redistribution
 ): DailyTask[] => {
   const newDailyTasks: DailyTask[] = [];
 
-  const workToPlan = totalWorkForPlan ?? subtasks.reduce((sum, s) => s.weight, 0);
+  // For planning, we only care about the work that still needs to be done.
+  const subtasksToPlan = subtasks
+    .map(s => ({ ...s, remaining: s.weight - s.progress }))
+    .filter(s => s.remaining > 0);
 
-  if (subtasks.length === 0 || workToPlan <= 0) {
+  const workToPlan = totalWorkForPlan ?? subtasksToPlan.reduce((sum, s) => sum + s.remaining, 0);
+
+  if (subtasksToPlan.length === 0 || workToPlan <= 0) {
     return dailyWorkloadForPlan.map(day => ({
         date: day.date,
-        title: 'Prepare for task. No subtasks defined.',
+        title: 'All tasks are complete or no work to plan.',
         completed: false,
-        weightForDay: workToPlan > 0 ? workToPlan * (day.percentage / 100) : 0,
+        weightForDay: 0,
         workSegments: []
     }));
   }
 
-  let cumulativeWorkDone = startCumulative;
-  let subtaskProgressMarker = 0;
+  // This tracks the progress of the *new plan*. It starts at 0.
+  let plannedWorkSoFar = startCumulative;
   let currentSubtaskIndex = 0;
-
-  // Find where to start
-  for(let i = 0; i < subtasks.length; i++) {
-    const subtask = subtasks[i];
-    if (subtaskProgressMarker + subtask.weight > cumulativeWorkDone) {
-      currentSubtaskIndex = i;
-      break;
-    }
-    subtaskProgressMarker += subtask.weight;
-  }
 
   for (const day of dailyWorkloadForPlan) {
     const workForDay = workToPlan * (day.percentage / 100);
@@ -76,125 +71,157 @@ export const generateSubtaskPlan = (
 
     let workLeftForDay = workForDay;
     const segmentsForDay = [];
-    let titleForDay = '';
+    
+    // Data for building the title string.
+    const descriptionData: { [key: string]: { workDoneThisDay: number, newTotalProgress: number, totalWeight: number } } = {};
+    let totalWorkDoneThisDay = 0;
 
-    while (workLeftForDay > 0.01 && currentSubtaskIndex < subtasks.length) {
-        const subtask = subtasks[currentSubtaskIndex];
-        const workDoneOnSubtaskBeforeThisSegment = Math.max(0, cumulativeWorkDone - subtaskProgressMarker);
-        const remainingOnSubtask = subtask.weight - workDoneOnSubtaskBeforeThisSegment;
+    while (workLeftForDay > 0.01 && currentSubtaskIndex < subtasksToPlan.length) {
+        const subtask = subtasksToPlan[currentSubtaskIndex];
         
-        const workThisSegment = Math.min(workLeftForDay, remainingOnSubtask);
+        // Find how much of this subtask has already been allocated in previous days of *this plan*.
+        const plannedWorkInPreviousSubtasks = subtasksToPlan.slice(0, currentSubtaskIndex).reduce((sum, s) => sum + s.remaining, 0);
+        const plannedWorkInThisSubtask = Math.max(0, plannedWorkSoFar - plannedWorkInPreviousSubtasks);
+        
+        // How much is left to plan for this subtask.
+        const remainingToPlanInSubtask = subtask.remaining - plannedWorkInThisSubtask;
+        
+        if (remainingToPlanInSubtask <= 0.001) { // Use a small epsilon for float comparison
+            currentSubtaskIndex++;
+            continue;
+        }
 
+        const workToDoOnThisSubtask = Math.min(workLeftForDay, remainingToPlanInSubtask);
+        
         if (subtask.materialId) {
             segmentsForDay.push({
                 subtaskId: subtask.id,
                 materialId: subtask.materialId,
-                start: workDoneOnSubtaskBeforeThisSegment,
-                end: workDoneOnSubtaskBeforeThisSegment + workThisSegment,
+                // Start from existing progress + what's planned before today
+                start: subtask.progress + plannedWorkInThisSubtask, 
+                end: subtask.progress + plannedWorkInThisSubtask + workToDoOnThisSubtask,
             });
         }
+
+        // The new total progress in this subtask after today's work.
+        const newTotalProgressForSubtask = subtask.progress + plannedWorkInThisSubtask + workToDoOnThisSubtask;
+
+        if (!descriptionData[subtask.name]) {
+            descriptionData[subtask.name] = { workDoneThisDay: 0, newTotalProgress: 0, totalWeight: subtask.weight };
+        }
+        descriptionData[subtask.name].workDoneThisDay += workToDoOnThisSubtask;
+        descriptionData[subtask.name].newTotalProgress = newTotalProgressForSubtask;
         
-        cumulativeWorkDone += workThisSegment;
-        workLeftForDay -= workThisSegment;
+        totalWorkDoneThisDay += workToDoOnThisSubtask;
+        workLeftForDay -= workToDoOnThisSubtask;
+        plannedWorkSoFar += workToDoOnThisSubtask;
         
-        if (cumulativeWorkDone >= subtaskProgressMarker + subtask.weight - 0.01) {
-            subtaskProgressMarker += subtask.weight;
+        // If we've planned for the entirety of this subtask's remaining work, move to the next.
+        if (plannedWorkInThisSubtask + workToDoOnThisSubtask >= subtask.remaining - 0.001) {
             currentSubtaskIndex++;
         }
     }
+    
+    const descriptionParts = Object.entries(descriptionData).map(([name, data]) => {
+      // Use Math.min to handle potential floating point errors making progress > total
+      const roundedProgress = Math.round(Math.min(data.newTotalProgress, data.totalWeight));
+      return `reaching ${roundedProgress}/${data.totalWeight} ${unit} in '${name}'`;
+    });
 
-    // Generate descriptive title
-    if (segmentsForDay.length === 1) {
-      const segment = segmentsForDay[0];
-      const subtask = subtasks.find(s => s.id === segment.subtaskId);
-      titleForDay = `Work on "${subtask?.name || 'task'}" (${Math.ceil(segment.end - segment.start)} ${unit})`;
-    } else if (segmentsForDay.length > 1) {
-        const firstSub = subtasks.find(s => s.id === segmentsForDay[0].subtaskId);
-        const lastSub = subtasks.find(s => s.id === segmentsForDay[segmentsForDay.length - 1].subtaskId);
-        titleForDay = `Finish "${firstSub?.name || 'task'}" and start "${lastSub?.name || 'task'}"`;
+    let title: string;
+    if (descriptionParts.length > 0) {
+        // Round the total work for the day to avoid ugly decimals in the title.
+        title = `Do ${Math.round(totalWorkDoneThisDay)} ${unit}, ${descriptionParts.join(' and ')}`;
     } else {
-        titleForDay = `Review or plan (${Math.ceil(workForDay)} ${unit})`;
+        title = "Continue working on your tasks."; // Fallback
     }
-
+    
     newDailyTasks.push({
-      date: day.date,
-      title: titleForDay,
-      completed: false,
-      weightForDay: workForDay,
-      workSegments: segmentsForDay,
+        date: day.date,
+        title: title,
+        completed: false,
+        weightForDay: totalWorkDoneThisDay, // Use the actual sum of segments for accuracy
+        workSegments: segmentsForDay
     });
   }
-
   return newDailyTasks;
 };
 
+export const formatTime = (date: Date, displaySettings: DisplaySettings): string => {
+    return date.toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: displaySettings.timeFormat === '12h',
+        timeZone: displaySettings.timeZone,
+    });
+};
+
+export const formatDateTime = (date: Date, displaySettings: DisplaySettings): string => {
+    return date.toLocaleString([], {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: displaySettings.timeFormat === '12h',
+        timeZone: displaySettings.timeZone,
+    });
+};
 
 export const getWorkForDate = (date: Date, worklets: Worklet[], timeZone: string): DailyWorkItem[] => {
-    const workItems: DailyWorkItem[] = [];
-    const dateKey = getDateKey(date, timeZone);
-    
-    worklets.forEach(w => {
-        if (w.type === WorkletType.Assignment || w.type === WorkletType.Exam) {
-            const task = w.dailyTasks.find(t => t.date === dateKey);
-            if (task) {
-                workItems.push({ worklet: w, description: task.title, isComplete: task.completed, dateKey, dailyTask: task });
-            }
-        } else if (w.type === WorkletType.Routine) {
-            const routine = w;
-            // Use the dateKey for comparison to be timezone-safe
-            const startDateKey = getDateKey(new Date(routine.startDate + 'T12:00:00Z'), timeZone);
-            const endDateKey = routine.endDate ? getDateKey(new Date(routine.endDate + 'T12:00:00Z'), timeZone) : null;
-            
-            if (dateKey >= startDateKey && (!endDateKey || dateKey <= endDateKey)) {
-                // We use the original date object to get the day of the week in the target timezone
-                const checkDate = new Date(dateKey + 'T12:00:00Z'); // use a consistent date object
-                const correctDayOfWeek = checkDate.getUTCDay();
+  const dateKey = getDateKey(date, timeZone);
+  const items: DailyWorkItem[] = [];
 
-                const scheduleForDay = routine.schedule.find(s => s.dayOfWeek === correctDayOfWeek);
-                if (scheduleForDay) {
-                    const isComplete = routine.completedDates.includes(dateKey);
-                    const routineInstance = { ...routine, deadline: `${dateKey}T${scheduleForDay.time}` };
-                    workItems.push({ worklet: routineInstance, description: "Routine", isComplete, dateKey });
-                }
-            }
-        } else if (w.type === WorkletType.Event || w.type === WorkletType.Birthday) {
-             const deadlineDateKey = getDateKey(new Date(w.deadline), timeZone);
-             if (deadlineDateKey === dateKey) {
-                if (w.type === WorkletType.Birthday) {
-                    // The dynamic description is now handled in WorkletItem.tsx
-                    // We provide a simple fallback here for other potential uses.
-                    workItems.push({ worklet: w, description: 'Birthday Today!', isComplete: false, dateKey: undefined });
-                } else { // Event
-                    const event = w as Event;
-                    const todayKey = getDateKey(new Date(), timeZone);
-                    const isToday = dateKey === todayKey;
-                    const isComplete = event.completed;
-                    workItems.push({ worklet: w, description: `Due ${isToday ? 'Today' : 'this day'}`, isComplete, dateKey: undefined });
-                }
-            }
+  worklets.forEach(w => {
+    if ((w.type === WorkletType.Assignment || w.type === WorkletType.Exam)) {
+      const task = (w as Assignment | Exam).dailyTasks.find(t => t.date === dateKey);
+      if (task) {
+        items.push({
+          worklet: w,
+          description: task.title,
+          isComplete: task.completed,
+          dateKey: task.date,
+          dailyTask: task,
+        });
+      }
+    } else if (w.type === WorkletType.Event) {
+      if (getDateKey(new Date(w.deadline), timeZone) === dateKey) {
+        items.push({
+          worklet: w,
+          description: w.type,
+          isComplete: (w as Event).completed,
+          dateKey: undefined,
+        });
+      }
+    } else if (w.type === WorkletType.Routine) {
+        const routine = w as Routine;
+        const routineDate = new Date(dateKey + "T12:00:00Z"); // Use a consistent UTC-based date for comparison
+        const dayOfWeek = routineDate.getUTCDay();
+        const scheduleForDay = routine.schedule.find(s => s.dayOfWeek === dayOfWeek);
+        const startDate = new Date(routine.startDate + 'T00:00:00Z');
+        const endDate = routine.endDate ? new Date(routine.endDate + 'T00:00:00Z') : null;
+
+        if (scheduleForDay && routineDate >= startDate && (!endDate || routineDate <= endDate)) {
+            const isComplete = routine.completedDates.includes(dateKey);
+            const routineInstance = { ...routine, deadline: `${dateKey}T${scheduleForDay.time}` };
+            items.push({
+                worklet: routineInstance,
+                description: 'Routine',
+                isComplete,
+                dateKey: dateKey,
+            });
         }
-    });
+    } else if (w.type === WorkletType.Birthday) {
+         if (getDateKey(new Date(w.deadline), timeZone) === dateKey) {
+            items.push({
+                worklet: w,
+                description: 'Birthday',
+                isComplete: false,
+                dateKey: undefined
+            });
+         }
+    }
+  });
 
-    return workItems.sort((a, b) => new Date(a.worklet.deadline).getTime() - new Date(b.worklet.deadline).getTime());
-};
-
-export const formatTime = (date: Date, settings: DisplaySettings): string => {
-    return date.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: settings.timeFormat === '12h',
-        timeZone: settings.timeZone,
-    });
-};
-
-export const formatDateTime = (date: Date, settings: DisplaySettings): string => {
-    return date.toLocaleString([], {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: settings.timeFormat === '12h',
-        timeZone: settings.timeZone,
-    });
+  return items.sort((a,b) => new Date(a.worklet.deadline).getTime() - new Date(b.worklet.deadline).getTime());
 };

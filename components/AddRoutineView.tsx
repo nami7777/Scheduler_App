@@ -1,17 +1,14 @@
 
 
-
-
-
-
 import React, { useState, useEffect } from 'react';
-import { Routine, RoutineSchedule, WorkletType } from '../types.ts';
+import { Routine, RoutineSchedule, WorkletType, PrefillWorklet } from '../types.ts';
 import { XMarkIcon } from './icons.tsx';
 
 interface AddRoutineViewProps {
   onSave: (routine: Routine) => void;
   onCancel: () => void;
   routineToEdit?: Routine | null;
+  prefillData?: PrefillWorklet | null;
 }
 
 const colorOptions = [
@@ -22,22 +19,23 @@ const colorOptions = [
 const emojiOptions = ['🏃', '🏋️', '🧘', '📖', '🎨', '🎵', '🧹', '🧺', '🍳', '🛒', '💼', '🧑‍💻'];
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-const AddRoutineView: React.FC<AddRoutineViewProps> = ({ onSave, onCancel, routineToEdit }) => {
+const AddRoutineView: React.FC<AddRoutineViewProps> = ({ onSave, onCancel, routineToEdit, prefillData }) => {
   const isEditing = !!routineToEdit;
+  const initialData = routineToEdit || prefillData;
 
-  const [name, setName] = useState(routineToEdit?.name || '');
-  const [details, setDetails] = useState(routineToEdit?.details || '');
-  const [emoji, setEmoji] = useState(routineToEdit?.emoji || '🏃');
-  const [color, setColor] = useState(routineToEdit?.color || colorOptions[4]);
-  const [startDate, setStartDate] = useState(routineToEdit?.startDate || new Date().toISOString().split('T')[0]);
-  const [isIndefinite, setIsIndefinite] = useState(routineToEdit ? routineToEdit.endDate === null : true);
-  const [endDate, setEndDate] = useState(routineToEdit?.endDate || '');
-  const [showCountdown, setShowCountdown] = useState(routineToEdit?.showCountdown || false);
+  const [name, setName] = useState(initialData?.name || '');
+  const [details, setDetails] = useState(initialData?.details || '');
+  const [emoji, setEmoji] = useState(initialData?.emoji || '🏃');
+  const [color, setColor] = useState(initialData?.color || colorOptions[4]);
+  const [startDate, setStartDate] = useState(initialData?.startDate || new Date().toISOString().split('T')[0]);
+  const [isIndefinite, setIsIndefinite] = useState(initialData ? initialData.endDate === null : true);
+  const [endDate, setEndDate] = useState(initialData?.endDate || '');
+  const [showCountdown, setShowCountdown] = useState(initialData?.showCountdown || false);
 
   const [schedule, setSchedule] = useState<({enabled: boolean} & RoutineSchedule)[]>(() => {
     const initial = daysOfWeek.map((_, i) => ({ dayOfWeek: i, time: '08:00', enabled: false }));
-    if (routineToEdit) {
-      routineToEdit.schedule.forEach(s => {
+    if (initialData?.schedule) {
+      initialData.schedule.forEach(s => {
         initial[s.dayOfWeek] = { ...s, enabled: true };
       });
     }
@@ -65,7 +63,7 @@ const AddRoutineView: React.FC<AddRoutineViewProps> = ({ onSave, onCancel, routi
         : new Date('2099-12-31').toISOString();
 
     onSave({
-      id: routineToEdit?.id || crypto.randomUUID(),
+      id: routineToEdit?.id || (prefillData && prefillData.id) || crypto.randomUUID(),
       type: WorkletType.Routine,
       name,
       details,
@@ -83,7 +81,7 @@ const AddRoutineView: React.FC<AddRoutineViewProps> = ({ onSave, onCancel, routi
   const inputClasses = "w-full p-2 bg-sky-50/80 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-slate-900 placeholder:text-slate-400";
 
   return (
-    <div className="p-4 sm:p-6 max-w-2xl mx-auto pb-24">
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto">
       <div className="py-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-extrabold bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent text-center truncate">{name || (isEditing ? 'Edit Routine' : 'New Routine')}</h1>
       </div>
@@ -170,6 +168,9 @@ const AddRoutineView: React.FC<AddRoutineViewProps> = ({ onSave, onCancel, routi
           ))}
         </div>
       </form>
+
+      {/* Spacer to prevent overlap with fixed action bar */}
+      <div className="h-24" />
 
       {/* Action Bar */}
       <div className="fixed bottom-6 left-0 right-0 z-40">
