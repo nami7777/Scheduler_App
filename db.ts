@@ -1,13 +1,14 @@
 
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import { Worklet, Habit, SpeedSession, Material } from './types.ts';
+import { Worklet, Habit, SpeedSession, Material, TimeBlock } from './types.ts';
 
 const DB_NAME = 'gemini-scheduler-db';
-const DB_VERSION = 2; // Incremented version for schema change
+const DB_VERSION = 3; // Incremented version for schema change
 const WORKLETS_STORE = 'worklets';
 const HABITS_STORE = 'habits';
 const SESSIONS_STORE = 'speed-sessions';
 const MATERIALS_STORE = 'materials';
+const TIME_BLOCKS_STORE = 'time_blocks';
 
 interface AppDBSchema extends DBSchema {
   [WORKLETS_STORE]: {
@@ -29,6 +30,11 @@ interface AppDBSchema extends DBSchema {
     key: string;
     value: Material;
     indexes: { type: string };
+  };
+  [TIME_BLOCKS_STORE]: {
+    key: string;
+    value: TimeBlock;
+    indexes: { date: string, isRecurring: 'true' | 'false' };
   }
 }
 
@@ -56,6 +62,13 @@ const getDb = () => {
              if (!db.objectStoreNames.contains(MATERIALS_STORE)) {
                 const store = db.createObjectStore(MATERIALS_STORE, { keyPath: 'id' });
                 store.createIndex('type', 'type');
+            }
+        }
+         if (oldVersion < 3) {
+            if (!db.objectStoreNames.contains(TIME_BLOCKS_STORE)) {
+                const store = db.createObjectStore(TIME_BLOCKS_STORE, { keyPath: 'id' });
+                store.createIndex('date', 'date');
+                store.createIndex('isRecurring', 'isRecurring');
             }
         }
       },
@@ -131,9 +144,23 @@ export const deleteMaterial = async (id: string): Promise<void> => {
   await db.delete(MATERIALS_STORE, id);
 };
 
+// TimeBlock functions
+export const getAllTimeBlocks = async (): Promise<TimeBlock[]> => {
+  const db = await getDb();
+  return db.getAll(TIME_BLOCKS_STORE);
+};
+export const saveTimeBlock = async (timeBlock: TimeBlock): Promise<void> => {
+  const db = await getDb();
+  await db.put(TIME_BLOCKS_STORE, timeBlock);
+};
+export const deleteTimeBlock = async (id: string): Promise<void> => {
+  const db = await getDb();
+  await db.delete(TIME_BLOCKS_STORE, id);
+};
+
 // --- Data Management Functions ---
 
-export const clearStore = async (storeName: 'worklets' | 'habits' | 'speed-sessions' | 'materials'): Promise<void> => {
+export const clearStore = async (storeName: 'worklets' | 'habits' | 'speed-sessions' | 'materials' | 'time_blocks'): Promise<void> => {
     const db = await getDb();
     await db.clear(storeName);
 };
@@ -160,4 +187,10 @@ export const bulkSaveMaterials = async (materials: Material[]): Promise<void> =>
     const db = await getDb();
     const tx = db.transaction(MATERIALS_STORE, 'readwrite');
     await Promise.all([...materials.map(m => tx.store.put(m)), tx.done]);
+};
+
+export const bulkSaveTimeBlocks = async (timeBlocks: TimeBlock[]): Promise<void> => {
+    const db = await getDb();
+    const tx = db.transaction(TIME_BLOCKS_STORE, 'readwrite');
+    await Promise.all([...timeBlocks.map(tb => tx.store.put(tb)), tx.done]);
 };
