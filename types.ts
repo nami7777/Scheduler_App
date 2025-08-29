@@ -1,5 +1,6 @@
 
 
+
 export enum WorkletType {
   Assignment = 'Assignment',
   Exam = 'Exam',
@@ -76,6 +77,8 @@ export interface Material {
     pageBackgrounds?: { [pageNum: number]: 'blank' | 'grid' | 'lines' }; // For notebooks
     orientation?: 'portrait' | 'landscape'; // For notebooks
     lastViewedPage?: number;
+    zoom?: number;
+    offset?: { x: number, y: number };
 }
 
 
@@ -142,6 +145,7 @@ export interface Assignment extends BaseWorklet {
     originalDailyTasks: DailyTask[];
     originalDailyWorkload: DailyWorkload[];
   };
+  dailyWorkTime?: { start: string; end: string };
   completedPages?: { [materialId: string]: number[] };
 }
 
@@ -160,6 +164,7 @@ export interface Exam extends BaseWorklet {
     originalDailyTasks: DailyTask[];
     originalDailyWorkload: DailyWorkload[];
   };
+  dailyWorkTime?: { start: string; end: string };
   completedPages?: { [materialId: string]: number[] };
 }
 
@@ -215,6 +220,7 @@ export type PrefillWorklet = {
         originalDailyTasks: DailyTask[];
         originalDailyWorkload: DailyWorkload[];
     };
+    dailyWorkTime?: { start: string, end: string };
     completedPages?: { [materialId: string]: number[] };
     location?: string;
     completed?: boolean;
@@ -241,10 +247,30 @@ export interface Habit {
   completions: { [date: string]: boolean }; // key: 'YYYY-MM-DD'
 }
 
+export interface TimeBlock {
+  id: string;
+  title: string;
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  color: string;
+  
+  // Link to a worklet if it's based on one
+  workletId?: string;
+  dailyWorkItemDateKey?: string; // To uniquely identify an instance of a daily task or routine
+  
+  // Recurrence info
+  isRecurring: boolean;
+  daysOfWeek?: number[]; // 0=Sun, 1=Mon, etc.
+  date?: string; // YYYY-MM-DD for non-recurring events
+  startDate?: string; // YYYY-MM-DD for start of recurring event
+  endDate?: string | null; // YYYY-MM-DD for end of recurring event, null for indefinite
+}
+
 export enum View {
   Dashboard = 'DASHBOARD',
   Habits = 'HABITS',
   Calendar = 'CALENDAR',
+  DailyPlanner = 'DAILY_PLANNER',
   AddWorklet = 'ADD_WORKLET',
   PastWork = 'PAST_WORK',
   SpeedCheck = 'SPEED_CHECK',

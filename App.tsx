@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Worklet, View, Assignment, WorkletType, Event, Routine, Exam, SpeedSession, AppSettings, DisplaySettings, NotificationSettings, Habit, Birthday, DailyTask, DailyWorkload, Material, PrefillWorklet, MaterialType } from './types.ts';
+import { Worklet, View, Assignment, WorkletType, Event, Routine, Exam, SpeedSession, AppSettings, DisplaySettings, NotificationSettings, Habit, Birthday, DailyTask, DailyWorkload, Material, PrefillWorklet, MaterialType, TimeBlock } from './types.ts';
 import Dashboard from './components/Dashboard.tsx';
 import CalendarView from './components/CalendarView.tsx';
 import AddWorkletView, { AddEventForm, AddBirthdayForm } from './components/AddWorkletView.tsx';
@@ -15,18 +15,20 @@ import MaterialsView from './components/MaterialsView.tsx';
 import PlaygroundView from './components/PlaygroundView.tsx';
 import NotebookPlaygroundView from './components/NotebookPlaygroundView.tsx';
 import AiAssistantView from './components/AiAssistantView.tsx';
+import DailyPlannerView from './components/DailyPlannerView.tsx';
 import WorkletDetailModal from './components/WorkletDetailModal.tsx';
 import RadialMenu from './components/RadialMenu.tsx';
 import Guide from './components/Guide.tsx';
 import { guideSteps } from './components/guideSteps.ts';
-import { PlusIcon, CalendarIcon, ChartBarIcon, ArchiveBoxIcon, StopwatchIcon, Cog6ToothIcon, ChartPieIcon, StarIcon, ListBulletIcon, DocumentDuplicateIcon, SparklesIcon } from './components/icons.tsx';
+import { PlusIcon, CalendarIcon, ChartBarIcon, ArchiveBoxIcon, StopwatchIcon, Cog6ToothIcon, ChartPieIcon, StarIcon, ListBulletIcon, DocumentDuplicateIcon, SparklesIcon, ClockIcon } from './components/icons.tsx';
 import { getWorkForDate, calculateNextBirthday, generateSubtaskPlan, getDateKey } from './utils.ts';
 import { 
     getAllWorklets, saveWorklet as dbSaveWorklet, deleteWorklet as dbDeleteWorklet,
     getAllHabits, saveHabit as dbSaveHabit, deleteHabit as dbDeleteHabit,
     getAllSessions, saveSession as dbSaveSession, deleteSessionsForWorklet as dbDeleteSessionsForWorklet,
     getAllMaterials, saveMaterial as dbSaveMaterial, deleteMaterial as dbDeleteMaterial,
-    clearStore, bulkSaveWorklets, bulkSaveHabits, bulkSaveSessions, bulkSaveMaterials
+    getAllTimeBlocks, saveTimeBlock as dbSaveTimeBlock, deleteTimeBlock as dbDeleteTimeBlock,
+    clearStore, bulkSaveWorklets, bulkSaveHabits, bulkSaveSessions, bulkSaveMaterials, bulkSaveTimeBlocks
 } from './db.ts';
 import AddHabitView from './components/AddHabitView.tsx';
 
@@ -62,6 +64,7 @@ const App: React.FC = () => {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [speedSessions, setSpeedSessions] = useState<SpeedSession[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
   
   const [playgroundArgs, setPlaygroundArgs] = useState<{workletId?: string; dateKey?: string; materialId?: string; returnTo?: View} | null>(null);
 
@@ -102,11 +105,12 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
         try {
-            const [workletsData, habitsData, sessionsData, materialsData] = await Promise.all([
+            const [workletsData, habitsData, sessionsData, materialsData, timeBlocksData] = await Promise.all([
                 getAllWorklets(),
                 getAllHabits(),
                 getAllSessions(),
                 getAllMaterials(),
+                getAllTimeBlocks(),
             ]);
 
             // Birthday maintenance task
@@ -137,6 +141,7 @@ const App: React.FC = () => {
             setHabits(habitsData.sort((a, b) => a.name.localeCompare(b.name)));
             setSpeedSessions(sessionsData);
             setMaterials(materialsData);
+            setTimeBlocks(timeBlocksData);
         } catch (error) {
             console.error("Failed to load data from IndexedDB", error);
             // Optionally, show an error message to the user
@@ -248,6 +253,46 @@ const App: React.FC = () => {
         setMaterials(prev => [...prev.filter(m => !newMaterials.find(nm => nm.id === m.id)), ...newMaterials]);
     }
     
+    // Auto-schedule time block for assignments/exams
+    if (worklet.type === WorkletType.Assignment || worklet.type === WorkletType.Exam) {
+        const detailedWorklet = worklet as Assignment | Exam;
+        const existingBlock = timeBlocks.find(tb => tb.workletId === detailedWorklet.id && tb.isRecurring);
+
+        if (detailedWorklet.dailyWorkTime) {
+            // Create or update a recurring time block
+            const daysOfWeek = detailedWorklet.useSpecificWeekdays && detailedWorklet.selectedWeekdays?.length
+                ? detailedWorklet.selectedWeekdays 
+                : [0, 1, 2, 3, 4, 5, 6];
+
+            const newBlock: TimeBlock = {
+                id: existingBlock?.id || crypto.randomUUID(),
+                title: detailedWorklet.name,
+                startTime: detailedWorklet.dailyWorkTime.start,
+                endTime: detailedWorklet.dailyWorkTime.end,
+                color: detailedWorklet.color,
+                workletId: detailedWorklet.id,
+                isRecurring: true,
+                daysOfWeek,
+                startDate: detailedWorklet.startDate.split('T')[0],
+                endDate: new Date(detailedWorklet.deadline).toISOString().split('T')[0],
+            };
+            await dbSaveTimeBlock(newBlock);
+            setTimeBlocks(prev => {
+                const index = prev.findIndex(tb => tb.id === newBlock.id);
+                if (index > -1) {
+                    const newTimeBlocks = [...prev];
+                    newTimeBlocks[index] = newBlock;
+                    return newTimeBlocks;
+                }
+                return [...prev, newBlock];
+            });
+        } else if (existingBlock) {
+            // Delete the existing block if the daily time was removed
+            await dbDeleteTimeBlock(existingBlock.id);
+            setTimeBlocks(prev => prev.filter(tb => tb.id !== existingBlock.id));
+        }
+    }
+
     await dbSaveWorklet(worklet);
     setWorklets(prev => {
         const index = prev.findIndex(w => w.id === worklet.id);
@@ -571,16 +616,53 @@ const App: React.FC = () => {
     setHabitViewMode('list');
   };
 
+  const handleSaveTimeBlock = async (timeBlock: TimeBlock) => {
+    // If the block is linked to an assignment/exam and its color has changed,
+    // update the parent worklet as well.
+    if (timeBlock.workletId) {
+      const workletIndex = worklets.findIndex(w => w.id === timeBlock.workletId);
+      if (workletIndex > -1) {
+        const worklet = worklets[workletIndex];
+        if ((worklet.type === WorkletType.Assignment || worklet.type === WorkletType.Exam) && worklet.color !== timeBlock.color) {
+          const updatedWorklet = { ...worklet, color: timeBlock.color };
+          await dbSaveWorklet(updatedWorklet);
+          
+          const newWorklets = [...worklets];
+          newWorklets[workletIndex] = updatedWorklet;
+          setWorklets(newWorklets); // Update state directly to avoid navigation/sorting side-effects
+        }
+      }
+    }
+
+    await dbSaveTimeBlock(timeBlock);
+    setTimeBlocks(prev => {
+        const index = prev.findIndex(tb => tb.id === timeBlock.id);
+        if (index > -1) {
+            const newTimeBlocks = [...prev];
+            newTimeBlocks[index] = timeBlock;
+            return newTimeBlocks;
+        }
+        return [...prev, timeBlock];
+    });
+  };
+
+  const handleDeleteTimeBlock = async (timeBlockId: string) => {
+    await dbDeleteTimeBlock(timeBlockId);
+    setTimeBlocks(prev => prev.filter(tb => tb.id !== timeBlockId));
+  };
+
+
     const handleExportData = () => {
         const dataToExport = {
-            version: "1.0.0",
+            version: "1.1.0",
             exportDate: new Date().toISOString(),
             data: {
                 worklets,
                 habits,
                 speedSessions,
                 settings: appSettings,
-                materials, // Materials are now part of the export
+                materials,
+                timeBlocks,
             }
         };
 
@@ -623,6 +705,7 @@ const App: React.FC = () => {
                         clearStore('habits'),
                         clearStore('speed-sessions'),
                         clearStore('materials'),
+                        clearStore('time_blocks'),
                     ]);
                     
                     // Save imported data
@@ -631,6 +714,7 @@ const App: React.FC = () => {
                         bulkSaveHabits(importedData.data.habits),
                         bulkSaveSessions(importedData.data.speedSessions),
                         bulkSaveMaterials(importedData.data.materials || []),
+                        bulkSaveTimeBlocks(importedData.data.timeBlocks || []),
                     ]);
 
                 } else { // mode === 'merge'
@@ -646,6 +730,7 @@ const App: React.FC = () => {
                         bulkSaveHabits(importedData.data.habits),
                         bulkSaveSessions(importedData.data.speedSessions),
                         bulkSaveMaterials(importedData.data.materials || []),
+                        bulkSaveTimeBlocks(importedData.data.timeBlocks || []),
                     ]);
                 }
 
@@ -671,6 +756,14 @@ const App: React.FC = () => {
 
   const renderView = () => {
     switch (view) {
+      case View.DailyPlanner:
+        return <DailyPlannerView 
+            worklets={worklets}
+            timeBlocks={timeBlocks}
+            onSaveTimeBlock={handleSaveTimeBlock}
+            onDeleteTimeBlock={handleDeleteTimeBlock}
+            displaySettings={appSettings.display}
+        />;
       case View.AiAssistant:
         return <AiAssistantView worklets={worklets} displaySettings={appSettings.display} onNavigateWithPrefill={handleNavigateWithPrefill} />;
       case View.Playground: {
@@ -868,6 +961,7 @@ const App: React.FC = () => {
             </button>
             <div className="hidden sm:flex items-center gap-2">
                 <NavButton targetView={View.Dashboard} icon={<ChartBarIcon className="w-5 h-5"/>} label="Dashboard" id="guide-nav-dashboard" />
+                <NavButton targetView={View.DailyPlanner} icon={<ClockIcon className="w-5 h-5"/>} label="Daily Planner" id="guide-nav-daily-planner" />
                 <NavButton targetView={View.AiAssistant} icon={<SparklesIcon className="w-5 h-5"/>} label="AI Assistant" />
                 <NavButton targetView={View.Materials} icon={<DocumentDuplicateIcon className="w-5 h-5"/>} label="Materials" />
                 <NavButton targetView={View.Habits} icon={<StarIcon className="w-5 h-5"/>} label="Habits" id="guide-nav-habits"/>
@@ -889,6 +983,7 @@ const App: React.FC = () => {
             <div className="sm:hidden border-t border-slate-200/80">
                 <div className="px-2 py-1 flex items-center gap-2 overflow-x-auto">
                     <NavButton targetView={View.Dashboard} icon={<ChartBarIcon className="w-5 h-5"/>} label="Dashboard" isMobile />
+                    <NavButton targetView={View.DailyPlanner} icon={<ClockIcon className="w-5 h-5"/>} label="Planner" isMobile />
                     <NavButton targetView={View.AiAssistant} icon={<SparklesIcon className="w-5 h-5"/>} label="AI Assistant" isMobile />
                     <NavButton targetView={View.Materials} icon={<DocumentDuplicateIcon className="w-5 h-5"/>} label="Materials" isMobile />
                     <NavButton targetView={View.Habits} icon={<StarIcon className="w-5 h-5"/>} label="Habits" isMobile />

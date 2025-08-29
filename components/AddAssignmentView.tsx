@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Assignment, Subtask, DailyWorkload, WorkletType, DailyTask, Exam, Material, MaterialType, PrefillWorklet } from '../types.ts';
 import { TrashIcon, XMarkIcon } from './icons.tsx';
@@ -50,6 +51,10 @@ const AddAssignmentView: React.FC<AddDetailedWorkletProps> = ({ onSave, onCancel
   
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+
+  const [scheduleDailyTime, setScheduleDailyTime] = useState(!!initialData?.dailyWorkTime);
+  const [dailyStartTime, setDailyStartTime] = useState(initialData?.dailyWorkTime?.start || '17:00');
+  const [dailyEndTime, setDailyEndTime] = useState(initialData?.dailyWorkTime?.end || '18:00');
 
 
   useEffect(() => {
@@ -385,6 +390,8 @@ const handleSubtaskProgressChange = (id: string, value: string) => {
       weightUnit
     );
 
+    const dailyWorkTime = scheduleDailyTime && dailyStartTime && dailyEndTime ? { start: dailyStartTime, end: dailyEndTime } : undefined;
+
     const workletToSave: Assignment | Exam = {
       id: workletToEdit?.id || (prefillData && prefillData.id) || crypto.randomUUID(),
       type: workletType,
@@ -400,7 +407,8 @@ const handleSubtaskProgressChange = (id: string, value: string) => {
       weightUnit,
       useSpecificWeekdays,
       selectedWeekdays,
-      showCountdown
+      showCountdown,
+      dailyWorkTime,
     };
     
     onSave(workletToSave, materials);
@@ -575,6 +583,28 @@ const handleSubtaskProgressChange = (id: string, value: string) => {
                     <input type="checkbox" checked={showCountdown} onChange={e => setShowCountdown(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"/>
                     <span className="text-sm font-medium text-slate-700">Show a live countdown for this item on the dashboard</span>
                 </label>
+            </div>
+        </div>
+
+        <div className="p-4 bg-gradient-to-br from-white to-sky-50 rounded-lg shadow-sm">
+            <h2 className="text-xl font-semibold text-slate-800 mb-4">Daily Time Blocking (Optional)</h2>
+            <div className="space-y-4">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" checked={scheduleDailyTime} onChange={e => setScheduleDailyTime(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"/>
+                    <span className="text-sm font-medium text-slate-700">Schedule a recurring daily time block for this</span>
+                </label>
+                {scheduleDailyTime && (
+                    <div className="pl-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label htmlFor="daily-start-time" className="block text-sm font-medium text-slate-700 mb-1">Start Time</label>
+                            <input id="daily-start-time" type="time" value={dailyStartTime} onChange={e => setDailyStartTime(e.target.value)} className={inputClasses} />
+                        </div>
+                        <div>
+                            <label htmlFor="daily-end-time" className="block text-sm font-medium text-slate-700 mb-1">End Time</label>
+                            <input id="daily-end-time" type="time" value={dailyEndTime} onChange={e => setDailyEndTime(e.target.value)} className={inputClasses} />
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
 

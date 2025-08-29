@@ -2,13 +2,13 @@
 
 
 
-
 import React from 'react';
 import { View } from '../types.ts';
 import { 
     Squares2X2Icon, XMarkIcon, PlusIcon, ChartBarIcon, 
     CalendarIcon, ArchiveBoxIcon, StopwatchIcon, 
-    ChartPieIcon, Cog6ToothIcon, StarIcon, ListBulletIcon, DocumentDuplicateIcon, SparklesIcon
+    ChartPieIcon, Cog6ToothIcon, StarIcon, ListBulletIcon, DocumentDuplicateIcon, SparklesIcon,
+    ClockIcon
 } from './icons.tsx';
 
 interface ColumnMenuProps {
@@ -22,6 +22,7 @@ const ColumnMenu: React.FC<ColumnMenuProps> = ({ currentView, onNavigate, isOpen
 
     const menuItems = [
         { view: View.Dashboard, icon: <ChartBarIcon className="w-6 h-6"/>, label: 'Dashboard' },
+        { view: View.DailyPlanner, icon: <ClockIcon className="w-6 h-6"/>, label: 'Daily Planner' },
         { view: View.AiAssistant, icon: <SparklesIcon className="w-6 h-6"/>, label: 'AI Assistant' },
         { view: View.Materials, icon: <DocumentDuplicateIcon className="w-6 h-6"/>, label: 'Materials' },
         { view: View.Habits, icon: <StarIcon className="w-6 h-6"/>, label: 'Habits' },
