@@ -140,7 +140,10 @@ const AddAssignmentView: React.FC<AddDetailedWorkletProps> = ({ onSave, onCancel
 
             while (occurrences.length < count && currentDate < safetyLimit) {
                 const dayOfWeek = currentDate.getDay();
-                const currentDateKey = currentDate.toISOString().split('T')[0];
+                const y = currentDate.getFullYear();
+                const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+                const d = String(currentDate.getDate()).padStart(2, '0');
+                const currentDateKey = `${y}-${m}-${d}`;
 
                 for (const block of matchingBlocks) {
                     if ((block.daysOfWeek?.includes(dayOfWeek) ?? false) && 
@@ -152,7 +155,7 @@ const AddAssignmentView: React.FC<AddDetailedWorkletProps> = ({ onSave, onCancel
                         const label = `${block.title} - ${deadlineDate.toLocaleString(undefined, {
                             weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
                         })}`;
-                        const value = deadlineDate.toISOString().slice(0, 16);
+                        const value = `${currentDateKey}T${block.startTime}`;
                         occurrences.push({ label, value, date: deadlineDate });
                     }
                 }
