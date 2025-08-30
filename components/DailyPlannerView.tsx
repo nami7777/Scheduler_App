@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import { Worklet, TimeBlock, DisplaySettings, DailyWorkItem, WorkletType, Assignment, Exam } from '../types.ts';
 import { getWorkForDate, getDateKey, formatTime } from '../utils.ts';
 import { PlusIcon, XMarkIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon } from './icons.tsx';
@@ -233,6 +233,8 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [modalState, setModalState] = useState<{ isOpen: boolean; blockToEdit?: TimeBlock | null; prefillWorklet?: DailyWorkItem | null }>({ isOpen: false });
     const [currentTime, setCurrentTime] = useState(new Date());
+    const timelineContainerRef = useRef<HTMLDivElement>(null);
+    const pixelsPerHour = 80;
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -254,6 +256,23 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
     const selectedDateKey = useMemo(() => getDateKey(selectedDate, displaySettings.timeZone), [selectedDate, displaySettings.timeZone]);
     const todayKey = useMemo(() => getDateKey(new Date(), displaySettings.timeZone), [displaySettings.timeZone]);
     const isViewingToday = selectedDateKey === todayKey;
+
+    useLayoutEffect(() => {
+        if (isViewingToday && timelineContainerRef.current) {
+            const container = timelineContainerRef.current;
+            const now = new Date();
+            const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+            const topPosition = (currentTimeInMinutes / 60) * pixelsPerHour;
+            
+            const containerHeight = container.clientHeight;
+            const scrollToPosition = topPosition - (containerHeight / 2);
+
+            container.scrollTo({
+                top: scrollToPosition,
+                behavior: 'instant' 
+            });
+        }
+    }, [isViewingToday]);
 
     const formatDateHeader = (date: Date): string => {
         if (isViewingToday) {
@@ -319,7 +338,7 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
         );
     }, [workForDay, timeBlocksForDay]);
 
-    const pixelsPerHour = 80;
+
 
     const laidOutBlocks = useMemo(() => {
         const sortedBlocks = [...timeBlocksForDay].sort((a, b) => {
@@ -481,7 +500,7 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
                 </div>
 
                 {/* Timeline Column */}
-                <div className="lg:col-span-2 bg-white/50 rounded-lg shadow-inner h-[70vh] overflow-y-auto">
+                <div ref={timelineContainerRef} className="lg:col-span-2 bg-white/50 rounded-lg shadow-inner h-[70vh] overflow-y-auto">
                     <div className="relative pr-2" style={{ height: `${24 * pixelsPerHour}px`, marginLeft: '5rem' }}>
                         {/* Hour Labels and Grid Lines */}
                         {Array.from({ length: 24 }).map((_, hour) => (
