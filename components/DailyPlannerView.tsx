@@ -33,9 +33,10 @@ interface TimeBlockModalProps {
     prefillWorklet?: DailyWorkItem | null;
     date: string;
     worklets: Worklet[];
+    timeBlocks: TimeBlock[];
 }
 
-const TimeBlockModal: React.FC<TimeBlockModalProps> = ({ isOpen, onClose, onSave, onDelete, blockToEdit, prefillWorklet, date, worklets }) => {
+const TimeBlockModal: React.FC<TimeBlockModalProps> = ({ isOpen, onClose, onSave, onDelete, blockToEdit, prefillWorklet, date, worklets, timeBlocks }) => {
     const isEditing = !!blockToEdit;
     const isWorklet = !!prefillWorklet || (isEditing && !!blockToEdit.workletId);
 
@@ -47,6 +48,8 @@ const TimeBlockModal: React.FC<TimeBlockModalProps> = ({ isOpen, onClose, onSave
     const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
     const [endDate, setEndDate] = useState('');
     const [isIndefinite, setIsIndefinite] = useState(true);
+    const [isDeadlineBlock, setIsDeadlineBlock] = useState(false);
+    const [deadlineTemplateName, setDeadlineTemplateName] = useState('');
 
     const workletForBlock = useMemo(() => {
         if (prefillWorklet) return prefillWorklet.worklet;
@@ -57,6 +60,10 @@ const TimeBlockModal: React.FC<TimeBlockModalProps> = ({ isOpen, onClose, onSave
     }, [prefillWorklet, blockToEdit, worklets]);
     
     const canChangeColor = !isWorklet || (workletForBlock?.type === WorkletType.Assignment || workletForBlock?.type === WorkletType.Exam);
+
+    const existingTemplateNames = useMemo(() => {
+        return Array.from(new Set(timeBlocks.map(tb => tb.deadlineTemplateName).filter(Boolean))) as string[];
+    }, [timeBlocks]);
     
     useEffect(() => {
         if (isOpen) {
@@ -68,6 +75,8 @@ const TimeBlockModal: React.FC<TimeBlockModalProps> = ({ isOpen, onClose, onSave
             setDaysOfWeek(blockToEdit?.daysOfWeek || []);
             setEndDate(blockToEdit?.endDate || '');
             setIsIndefinite(blockToEdit ? blockToEdit.endDate === null : true);
+            setIsDeadlineBlock(blockToEdit?.isDeadlineBlock || false);
+            setDeadlineTemplateName(blockToEdit?.deadlineTemplateName || '');
         }
     }, [isOpen, blockToEdit, prefillWorklet, workletForBlock]);
 
@@ -89,6 +98,10 @@ const TimeBlockModal: React.FC<TimeBlockModalProps> = ({ isOpen, onClose, onSave
             alert('Please select at least one day for a recurring block.');
             return;
         }
+        if (isDeadlineBlock && !deadlineTemplateName.trim()) {
+            alert('Please provide a template name for the deadline block.');
+            return;
+        }
 
         onSave({
             id: blockToEdit?.id || crypto.randomUUID(),
@@ -103,6 +116,8 @@ const TimeBlockModal: React.FC<TimeBlockModalProps> = ({ isOpen, onClose, onSave
             endDate: isRecurring ? (isIndefinite ? null : endDate) : undefined,
             workletId: blockToEdit?.workletId || prefillWorklet?.worklet.id,
             dailyWorkItemDateKey: blockToEdit?.dailyWorkItemDateKey || prefillWorklet?.dateKey,
+            isDeadlineBlock: !isWorklet && isRecurring ? isDeadlineBlock : false,
+            deadlineTemplateName: !isWorklet && isRecurring && isDeadlineBlock ? deadlineTemplateName.trim() : undefined,
         });
         onClose();
     };
@@ -163,6 +178,28 @@ const TimeBlockModal: React.FC<TimeBlockModalProps> = ({ isOpen, onClose, onSave
                                            <span className="text-sm font-medium text-slate-700">Continues indefinitely</span>
                                        </label>
                                     </div>
+                                    <label className="flex items-center gap-2 cursor-pointer select-none pt-2">
+                                        <input type="checkbox" checked={isDeadlineBlock} onChange={e => setIsDeadlineBlock(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"/>
+                                        <span className="text-sm font-medium text-slate-700">Use as a deadline template</span>
+                                    </label>
+                                    {isDeadlineBlock && (
+                                        <div className="pl-6">
+                                            <label htmlFor="template-name" className="block text-sm font-medium text-slate-700 mb-1">Template Name</label>
+                                            <input
+                                                id="template-name"
+                                                type="text"
+                                                value={deadlineTemplateName}
+                                                onChange={e => setDeadlineTemplateName(e.target.value)}
+                                                className="w-full p-2 bg-sky-50/80 border border-slate-300 rounded-md"
+                                                list="template-names"
+                                                placeholder="e.g., Math Class"
+                                            />
+                                            <datalist id="template-names">
+                                                {existingTemplateNames.map(name => <option key={name} value={name} />)}
+                                            </datalist>
+                                            <p className="text-xs text-slate-500 mt-1">Use the same name across multiple blocks to merge them into one deadline option.</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -195,6 +232,14 @@ interface DailyPlannerViewProps {
 const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlocks, onSaveTimeBlock, onDeleteTimeBlock, displaySettings }) => {
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [modalState, setModalState] = useState<{ isOpen: boolean; blockToEdit?: TimeBlock | null; prefillWorklet?: DailyWorkItem | null }>({ isOpen: false });
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 60000); // Update every minute
+        return () => clearInterval(timer);
+    }, []);
 
     const handleDateChange = (direction: 'prev' | 'next' | 'today') => {
         if (direction === 'today') {
@@ -206,31 +251,30 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
         setSelectedDate(newDate);
     };
     
-    const formatDateHeader = (date: Date): string => {
-        const today = new Date();
-        const todayKey = getDateKey(today, displaySettings.timeZone);
-        const dateKey = getDateKey(date, displaySettings.timeZone);
+    const selectedDateKey = useMemo(() => getDateKey(selectedDate, displaySettings.timeZone), [selectedDate, displaySettings.timeZone]);
+    const todayKey = useMemo(() => getDateKey(new Date(), displaySettings.timeZone), [displaySettings.timeZone]);
+    const isViewingToday = selectedDateKey === todayKey;
 
-        if (dateKey === todayKey) {
+    const formatDateHeader = (date: Date): string => {
+        if (isViewingToday) {
             return `Today (${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})`;
         }
         
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-        if (dateKey === getDateKey(tomorrow, displaySettings.timeZone)) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        if (getDateKey(date, displaySettings.timeZone) === getDateKey(tomorrow, displaySettings.timeZone)) {
             return `Tomorrow (${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})`;
         }
 
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-        if (dateKey === getDateKey(yesterday, displaySettings.timeZone)) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (getDateKey(date, displaySettings.timeZone) === getDateKey(yesterday, displaySettings.timeZone)) {
             return `Yesterday (${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})`;
         }
         
         return date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
     };
 
-    const selectedDateKey = useMemo(() => getDateKey(selectedDate, displaySettings.timeZone), [selectedDate, displaySettings.timeZone]);
     const selectedDayOfWeek = useMemo(() => selectedDate.getDay(), [selectedDate]);
 
     const workForDay = useMemo(() => getWorkForDate(selectedDate, worklets, displaySettings.timeZone), [selectedDate, worklets, displaySettings.timeZone]);
@@ -247,6 +291,27 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
             }
         });
     }, [timeBlocks, selectedDateKey, selectedDayOfWeek]);
+
+    const { currentBlock, nextBlock } = useMemo(() => {
+        if (!isViewingToday) return { currentBlock: null, nextBlock: null };
+
+        const currentTimeInMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+        const sortedBlocks = [...timeBlocksForDay].sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime));
+
+        const currentBlock = sortedBlocks.find(block => {
+            const start = parseTimeToMinutes(block.startTime);
+            const end = parseTimeToMinutes(block.endTime);
+            return currentTimeInMinutes >= start && currentTimeInMinutes < end;
+        });
+        
+        const nextBlock = sortedBlocks.find(block => {
+            const start = parseTimeToMinutes(block.startTime);
+            return start > currentTimeInMinutes;
+        });
+
+        return { currentBlock, nextBlock };
+
+    }, [isViewingToday, currentTime, timeBlocksForDay]);
 
     const unplannedWorklets = useMemo(() => {
         return workForDay.filter(item => 
@@ -332,6 +397,28 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
         });
     }, [timeBlocksForDay]);
 
+    const NowNextDisplay = () => {
+        if (!isViewingToday) return null;
+
+        return (
+            <div className="p-4 bg-white rounded-lg shadow-sm mb-6 flex items-center justify-around text-center border-t-4 border-blue-500">
+                <div>
+                    <p className="text-sm text-slate-500">Now</p>
+                    <p className="font-bold text-lg text-blue-600 truncate max-w-xs">
+                        {currentBlock ? currentBlock.title : 'Free Time'}
+                    </p>
+                </div>
+                <div className="h-10 w-px bg-slate-200"></div>
+                <div>
+                    <p className="text-sm text-slate-500">Next</p>
+                    <p className="font-semibold text-lg text-slate-700 truncate max-w-xs">
+                        {nextBlock ? `${nextBlock.title} at ${formatTime(new Date(`1970-01-01T${nextBlock.startTime}`), displaySettings)}` : 'Nothing Scheduled'}
+                    </p>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="p-4 sm:p-6">
             <TimeBlockModal 
@@ -343,6 +430,7 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
                 prefillWorklet={modalState.prefillWorklet}
                 date={selectedDateKey}
                 worklets={worklets}
+                timeBlocks={timeBlocks}
             />
 
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -365,6 +453,8 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
                     </button>
                 </div>
             </div>
+
+            <NowNextDisplay />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Available Tasks Column */}
@@ -403,13 +493,25 @@ const DailyPlannerView: React.FC<DailyPlannerViewProps> = ({ worklets, timeBlock
                             </div>
                         ))}
                         
+                        {/* Current Time Indicator */}
+                        {isViewingToday && (() => {
+                            const currentTimeInMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+                            const topPosition = (currentTimeInMinutes / 60) * pixelsPerHour;
+                            return (
+                                <div className="absolute left-0 right-0 z-10 flex items-center" style={{ top: `${topPosition}px`, pointerEvents: 'none' }}>
+                                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white -ml-1.5 shadow-md"></div>
+                                    <div className="w-full h-0.5 bg-red-500"></div>
+                                </div>
+                            );
+                        })()}
+
                         {/* Time Blocks */}
                         {laidOutBlocks.map(({ block, layout }) => {
                             const duration = parseTimeToMinutes(block.endTime) - parseTimeToMinutes(block.startTime);
                             return (
                                 <div
                                     key={block.id}
-                                    className="absolute p-px"
+                                    className="absolute p-px z-0"
                                     style={{
                                         top: layout.top,
                                         height: layout.height,

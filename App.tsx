@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Worklet, View, Assignment, WorkletType, Event, Routine, Exam, SpeedSession, AppSettings, DisplaySettings, NotificationSettings, Habit, Birthday, DailyTask, DailyWorkload, Material, PrefillWorklet, MaterialType, TimeBlock } from './types.ts';
 import Dashboard from './components/Dashboard.tsx';
@@ -839,6 +840,7 @@ const App: React.FC = () => {
                                     workletToEdit={editingWorklet as Assignment | Exam | null} 
                                     workletType={typeToRender} 
                                     prefillData={prefillData}
+                                    timeBlocks={timeBlocks}
                                     />;
                     case WorkletType.Routine:
                         return <AddRoutineView 
@@ -959,7 +961,7 @@ const App: React.FC = () => {
                 Scheduler
               </h1>
             </button>
-            <div className="hidden sm:flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2 flex-wrap justify-center">
                 <NavButton targetView={View.Dashboard} icon={<ChartBarIcon className="w-5 h-5"/>} label="Dashboard" id="guide-nav-dashboard" />
                 <NavButton targetView={View.DailyPlanner} icon={<ClockIcon className="w-5 h-5"/>} label="Daily Planner" id="guide-nav-daily-planner" />
                 <NavButton targetView={View.AiAssistant} icon={<SparklesIcon className="w-5 h-5"/>} label="AI Assistant" />

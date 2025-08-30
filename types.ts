@@ -1,6 +1,4 @@
 
-
-
 export enum WorkletType {
   Assignment = 'Assignment',
   Exam = 'Exam',
@@ -264,6 +262,8 @@ export interface TimeBlock {
   date?: string; // YYYY-MM-DD for non-recurring events
   startDate?: string; // YYYY-MM-DD for start of recurring event
   endDate?: string | null; // YYYY-MM-DD for end of recurring event, null for indefinite
+  isDeadlineBlock?: boolean;
+  deadlineTemplateName?: string;
 }
 
 export enum View {

@@ -1,8 +1,6 @@
 
-
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Assignment, Subtask, DailyWorkload, WorkletType, DailyTask, Exam, Material, MaterialType, PrefillWorklet } from '../types.ts';
+import { Assignment, Subtask, DailyWorkload, WorkletType, DailyTask, Exam, Material, MaterialType, PrefillWorklet, TimeBlock } from '../types.ts';
 import { TrashIcon, XMarkIcon } from './icons.tsx';
 import { generateSubtaskPlan, getYoutubeVideoId } from '../utils.ts';
 
@@ -12,6 +10,7 @@ interface AddDetailedWorkletProps {
   workletToEdit?: Assignment | Exam | null;
   workletType: WorkletType.Assignment | WorkletType.Exam;
   prefillData?: PrefillWorklet | null;
+  timeBlocks: TimeBlock[];
 }
 
 const colorOptions = [
@@ -27,7 +26,7 @@ const colorOptions = [
 
 const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const AddAssignmentView: React.FC<AddDetailedWorkletProps> = ({ onSave, onCancel, workletToEdit, workletType, prefillData }) => {
+const AddAssignmentView: React.FC<AddDetailedWorkletProps> = ({ onSave, onCancel, workletToEdit, workletType, prefillData, timeBlocks }) => {
   const isEditing = !!workletToEdit;
   const initialData = workletToEdit || prefillData;
   
@@ -56,6 +55,19 @@ const AddAssignmentView: React.FC<AddDetailedWorkletProps> = ({ onSave, onCancel
   const [dailyStartTime, setDailyStartTime] = useState(initialData?.dailyWorkTime?.start || '17:00');
   const [dailyEndTime, setDailyEndTime] = useState(initialData?.dailyWorkTime?.end || '18:00');
 
+  const [deadlineMode, setDeadlineMode] = useState<'date' | 'block'>('date');
+  const [selectedTemplateName, setSelectedTemplateName] = useState<string>('');
+  const [deadlineOccurrences, setDeadlineOccurrences] = useState<{ label: string; value: string }[]>([]);
+
+  const deadlineTemplates = useMemo(() => {
+    const templateNames = new Set<string>();
+    timeBlocks.forEach(tb => {
+        if (tb.isDeadlineBlock && tb.deadlineTemplateName) {
+            templateNames.add(tb.deadlineTemplateName);
+        }
+    });
+    return Array.from(templateNames).sort();
+  }, [timeBlocks]);
 
   useEffect(() => {
     if (workletToEdit) {
@@ -113,6 +125,54 @@ const AddAssignmentView: React.FC<AddDetailedWorkletProps> = ({ onSave, onCancel
         subtasksForPlanning: subtasksToPlan,
     };
   }, [subtasks]);
+
+    useEffect(() => {
+        if (deadlineMode === 'block' && selectedTemplateName) {
+            const matchingBlocks = timeBlocks.filter(tb => tb.isDeadlineBlock && tb.deadlineTemplateName === selectedTemplateName);
+            if (matchingBlocks.length === 0) return;
+
+            const occurrences: { label: string; value: string; date: Date }[] = [];
+            const count = 30; // show next 30 occurrences
+            let currentDate = new Date();
+            currentDate.setHours(0, 0, 0, 0);
+            const safetyLimit = new Date();
+            safetyLimit.setFullYear(safetyLimit.getFullYear() + 2);
+
+            while (occurrences.length < count && currentDate < safetyLimit) {
+                const dayOfWeek = currentDate.getDay();
+                const currentDateKey = currentDate.toISOString().split('T')[0];
+
+                for (const block of matchingBlocks) {
+                    if ((block.daysOfWeek?.includes(dayOfWeek) ?? false) && 
+                        currentDateKey >= (block.startDate ?? '') &&
+                        (!block.endDate || currentDateKey <= block.endDate)) {
+                        
+                        const deadlineDate = new Date(`${currentDateKey}T${block.startTime}`);
+                        
+                        const label = `${block.title} - ${deadlineDate.toLocaleString(undefined, {
+                            weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                        })}`;
+                        const value = deadlineDate.toISOString().slice(0, 16);
+                        occurrences.push({ label, value, date: deadlineDate });
+                    }
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            
+            occurrences.sort((a, b) => a.date.getTime() - b.date.getTime());
+            
+            const finalOccurrences = occurrences.slice(0, count).map(({ label, value }) => ({ label, value }));
+
+            setDeadlineOccurrences(finalOccurrences);
+            if (finalOccurrences.length > 0) {
+                setDeadline(finalOccurrences[0].value);
+            } else {
+                setDeadline('');
+            }
+        } else {
+            setDeadlineOccurrences([]);
+        }
+    }, [deadlineMode, selectedTemplateName, timeBlocks]);
   
   const handleWeekdayToggle = (dayIndex: number) => {
     setSelectedWeekdays(prev => {
@@ -432,10 +492,36 @@ const handleSubtaskProgressChange = (id: string, value: string) => {
               <label htmlFor="title" className="block text-sm font-medium text-slate-700 mb-1">Title</label>
               <input type="text" id="title" value={title} onChange={e => setTitle(e.target.value)} className={inputClasses} required />
             </div>
-            <div>
-              <label htmlFor="deadline" className="block text-sm font-medium text-slate-700 mb-1">Deadline</label>
-              <input type="datetime-local" id="deadline" value={deadline} onChange={e => setDeadline(e.target.value)} className={inputClasses} required />
+            <div className="md:col-span-1">
+                <label className="block text-sm font-medium text-slate-700 mb-2">Deadline</label>
+                <div className="flex items-center gap-2 p-1 bg-slate-200/70 rounded-lg mb-2">
+                    <button type="button" onClick={() => setDeadlineMode('date')} className={`flex-1 px-4 py-1 text-sm rounded-md transition-all ${deadlineMode === 'date' ? 'bg-white shadow-sm font-semibold text-blue-700' : 'font-medium text-slate-600'}`}>Specific Date</button>
+                    {deadlineTemplates.length > 0 && <button type="button" onClick={() => setDeadlineMode('block')} className={`flex-1 px-4 py-1 text-sm rounded-md transition-all ${deadlineMode === 'block' ? 'bg-white shadow-sm font-semibold text-blue-700' : 'font-medium text-slate-600'}`}>From Block</button>}
+                </div>
+
+                {deadlineMode === 'date' ? (
+                    <input type="datetime-local" id="deadline" value={deadline} onChange={e => setDeadline(e.target.value)} className={inputClasses} required />
+                ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                        <select value={selectedTemplateName} onChange={e => setSelectedTemplateName(e.target.value)} className={inputClasses}>
+                            <option value="">Select template...</option>
+                            {deadlineTemplates.map(name => (
+                                <option key={name} value={name}>{name}</option>
+                            ))}
+                        </select>
+                        <select value={deadline} onChange={e => setDeadline(e.target.value)} className={inputClasses} disabled={!selectedTemplateName}>
+                            {deadlineOccurrences.length > 0 ? (
+                                deadlineOccurrences.map(occ => (
+                                    <option key={occ.value} value={occ.value}>{occ.label}</option>
+                                ))
+                            ) : (
+                                <option>Select a template first</option>
+                            )}
+                        </select>
+                    </div>
+                )}
             </div>
+
              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-2">Color Tag</label>
                 <div className="flex flex-wrap gap-2">
